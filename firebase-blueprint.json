@@ -1,0 +1,619 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "User accounts with role-based access control",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "fullName": { "type": "string", "description": "Full legal name" },
+        "name": { "type": "string", "description": "Display name" },
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "phone": { "type": "string", "description": "Contact phone number" },
+        "role": { "type": "string", "enum": ["platform_owner", "school_admin", "teacher", "student", "parent"], "description": "User role" },
+        "status": { "type": "string", "enum": ["active", "suspended", "pending", "disabled"], "description": "Account status" },
+        "schoolId": { "type": "string", "description": "Assigned school ID" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "ISO creation timestamp" }
+      },
+      "required": ["uid", "fullName", "email", "role", "status", "createdAt"]
+    },
+    "schools": {
+      "title": "Schools",
+      "description": "Registered educational institutions",
+      "type": "object",
+      "properties": {
+        "schoolId": { "type": "string", "description": "Unique school ID" },
+        "schoolName": { "type": "string", "description": "Official school name" },
+        "email": { "type": "string", "format": "email", "description": "Official school email" },
+        "phone": { "type": "string", "description": "School phone number" },
+        "country": { "type": "string", "description": "Country location" },
+        "address": { "type": "string", "description": "Physical address" },
+        "logoUrl": { "type": "string", "description": "School logo URL" },
+        "adminId": { "type": "string", "description": "Primary administrator user UID" },
+        "subscriptionPlan": { "type": "string", "description": "Active subscription plan name" },
+        "status": { "type": "string", "enum": ["active", "suspended", "pending"], "description": "School account status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "ISO creation timestamp" }
+      },
+      "required": ["schoolId", "schoolName", "email", "phone", "country", "adminId", "subscriptionPlan", "status", "createdAt"]
+    },
+    "platformSettings": {
+      "title": "Platform Settings",
+      "description": "Global application control settings for platform owners",
+      "type": "object",
+      "properties": {
+        "appName": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "themeColor": { "type": "string" },
+        "contactEmail": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "enableRegistrations": { "type": "boolean" },
+        "maintenanceMode": { "type": "boolean" },
+        "platformStatus": { "type": "string", "enum": ["operational", "degraded", "maintenance"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "subscriptionPlans": {
+      "title": "Subscription Plans",
+      "description": "Available SaaS subscription tiers",
+      "type": "object",
+      "properties": {
+        "planId": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "currency": { "type": "string" },
+        "duration": { "type": "string", "enum": ["monthly", "annual"] },
+        "features": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["active", "inactive"] }
+      },
+      "required": ["planId", "name", "price", "currency", "duration", "status"]
+    },
+    "pricingPlans": {
+      "title": "Pricing Plans",
+      "description": "Dynamic SaaS marketing pricing plans",
+      "type": "object",
+      "properties": {
+        "planName": { "type": "string" },
+        "price": { "type": "string" },
+        "currency": { "type": "string" },
+        "billingPeriod": { "type": "string" },
+        "description": { "type": "string" },
+        "features": { "type": "array", "items": { "type": "string" } },
+        "buttonText": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "order": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["planName", "price", "currency", "billingPeriod", "description", "features", "buttonText", "status", "order"]
+    },
+    "schoolSubscriptions": {
+      "title": "School Subscriptions",
+      "description": "Active SaaS school subscription records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "planId": { "type": "string" },
+        "planName": { "type": "string" },
+        "billingCycle": { "type": "string", "enum": ["monthly", "annual"] },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "trial", "past_due", "expired", "cancelled"] },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["schoolId", "planId", "planName", "billingCycle", "amount", "currency", "status"]
+    },
+    "billingInvoices": {
+      "title": "Billing Invoices",
+      "description": "Official invoices issued for SaaS platform subscriptions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "planId": { "type": "string" },
+        "planName": { "type": "string" },
+        "subtotal": { "type": "number" },
+        "taxAmount": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "currency": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "issued", "paid", "partially_paid", "overdue", "cancelled", "refunded"] },
+        "dueDate": { "type": "string" },
+        "paidDate": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["invoiceNumber", "schoolId", "schoolName", "totalAmount", "currency", "status", "dueDate"]
+    },
+    "studentInvoices": {
+      "title": "Student Fee Invoices",
+      "description": "School tuition and fee billing invoices issued to students/parents",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "feeCategory": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "amountPaid": { "type": "number" },
+        "outstandingBalance": { "type": "number" },
+        "currency": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Partially Paid", "Paid", "Overdue", "Cancelled"] },
+        "dueDate": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "term": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["invoiceNumber", "schoolId", "studentId", "totalAmount", "outstandingBalance", "status"]
+    },
+    "studentWallets": {
+      "title": "Student Wallets",
+      "description": "Digital cashless wallets for student daily services and canteen purchases",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "walletId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "balance": { "type": "number" },
+        "currency": { "type": "string" },
+        "dailyLimit": { "type": "number" },
+        "dailySpent": { "type": "number" },
+        "weeklyLimit": { "type": "number" },
+        "weeklySpent": { "type": "number" },
+        "monthlyLimit": { "type": "number" },
+        "monthlySpent": { "type": "number" },
+        "autoTopUpEnabled": { "type": "boolean" },
+        "autoTopUpThreshold": { "type": "number" },
+        "autoTopUpAmount": { "type": "number" },
+        "disabledCategories": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["active", "frozen", "closed"] },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["walletId", "studentId", "schoolId", "balance", "currency", "status"]
+    },
+    "walletTransactions": {
+      "title": "Wallet Transactions",
+      "description": "Immutable ledger of all top-ups, deductions, and refunds on student wallets",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "walletId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "type": { "type": "string", "enum": ["topup", "canteen_purchase", "shop_purchase", "transport_fee", "library_fine", "service_fee", "refund", "adjustment"] },
+        "amount": { "type": "number" },
+        "previousBalance": { "type": "number" },
+        "newBalance": { "type": "number" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "reference": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "processedBy": { "type": "string" },
+        "status": { "type": "string", "enum": ["successful", "failed", "pending", "reversed"] }
+      },
+      "required": ["walletId", "studentId", "schoolId", "type", "amount", "previousBalance", "newBalance", "status"]
+    },
+    "transactions": {
+      "title": "Platform Billing Transactions",
+      "description": "Immutable ledger of SaaS subscription payments and receipts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "invoiceId": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "gatewayReference": { "type": "string" },
+        "status": { "type": "string", "enum": ["successful", "failed", "pending", "refunded"] },
+        "date": { "type": "string", "format": "date-time" },
+        "processedBy": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["transactionId", "schoolId", "amount", "currency", "status"]
+    },
+    "paymentReceipts": {
+      "title": "Payment Receipts",
+      "description": "Cryptographically verifiable official school payment receipts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "receiptNumber": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "parentName": { "type": "string" },
+        "feeType": { "type": "string" },
+        "amountPaid": { "type": "number" },
+        "balance": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "transactionRef": { "type": "string" },
+        "datePaid": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["receiptNumber", "schoolId", "studentId", "amountPaid", "transactionRef", "status"]
+    },
+    "schoolDocumentSettings": {
+      "title": "School Document Settings",
+      "description": "Custom branding and configuration for payment receipts and report cards",
+      "type": "object",
+      "properties": {
+        "schoolId": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "tagline": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "primaryColor": { "type": "string" },
+        "accentColor": { "type": "string" },
+        "receiptLayout": { "type": "string" },
+        "reportCardLayout": { "type": "string" },
+        "principalName": { "type": "string" },
+        "principalTitle": { "type": "string" },
+        "cashierTitle": { "type": "string" }
+      },
+      "required": ["schoolId", "schoolName"]
+    },
+    "paymentMethods": {
+      "title": "Payment Methods",
+      "description": "Configured payment gateway channels and accounts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "instructions": { "type": "string" },
+        "processingFeePercent": { "type": "number" },
+        "processingFeeFlat": { "type": "number" },
+        "iconName": { "type": "string" }
+      },
+      "required": ["code", "name", "category", "enabled"]
+    },
+    "auditLogs": {
+      "title": "Audit Logs",
+      "description": "Platform security and financial audit records",
+      "type": "object",
+      "properties": {
+        "logId": { "type": "string" },
+        "action": { "type": "string" },
+        "performedBy": { "type": "string" },
+        "performedByEmail": { "type": "string" },
+        "details": { "type": "string" },
+        "ipAddress": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "notifications": {
+      "title": "Notifications",
+      "description": "Global notification messages for system users",
+      "type": "object",
+      "properties": {
+        "notificationId": { "type": "string" },
+        "recipientId": { "type": "string" },
+        "recipientRole": { "type": "string", "enum": ["platform_owner", "school_admin", "teacher", "student", "parent", "ALL"] },
+        "schoolId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["Announcement", "Assignment", "Attendance", "Payment", "Results", "Timetable", "Examination", "System Alert", "Security Alert"] },
+        "priority": { "type": "string", "enum": ["Low", "Normal", "High", "Urgent"] },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "actionUrl": { "type": "string" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["notificationId", "recipientId", "title", "message", "type", "priority", "isRead", "createdAt"]
+    },
+    "notificationSettings": {
+      "title": "Notification Settings",
+      "description": "User preference settings for alerts",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "pushEnabled": { "type": "boolean" },
+        "emailEnabled": { "type": "boolean" },
+        "announcementEnabled": { "type": "boolean" },
+        "reminderEnabled": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "pushEnabled", "emailEnabled", "announcementEnabled", "reminderEnabled"]
+    },
+    "emailSettings": {
+      "title": "Email Settings",
+      "description": "School email configuration",
+      "type": "object",
+      "properties": {
+        "schoolId": { "type": "string" },
+        "emailEnabled": { "type": "boolean" },
+        "senderName": { "type": "string" },
+        "senderEmail": { "type": "string" },
+        "templates": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "fcmTokens": {
+      "title": "FCM Tokens",
+      "description": "Registered FCM push tokens",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "token": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "lmsCourses": {
+      "title": "LMS Courses",
+      "description": "Academic course curriculum and classroom mappings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "courseCode": { "type": "string" },
+        "courseName": { "type": "string" },
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "teacherName": { "type": "string" },
+        "classId": { "type": "string" },
+        "className": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "term": { "type": "string" },
+        "coverImage": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "active", "archived"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "schoolId", "courseCode", "courseName", "subject", "teacherId", "teacherName", "className", "status"]
+    },
+    "lmsLessons": {
+      "title": "LMS Lessons",
+      "description": "Interactive multi-media lessons with rich text, STEM formulas, and attachments",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "order": { "type": "number" },
+        "durationMinutes": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "published"] },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "courseId", "schoolId", "title", "content", "status"]
+    },
+    "lmsQuizzes": {
+      "title": "LMS Quizzes",
+      "description": "Online assessments and interactive quizzes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "courseId": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "title": { "type": "string" },
+        "timeLimitMinutes": { "type": "number" },
+        "passingScore": { "type": "number" },
+        "totalPoints": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "published"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "courseId", "schoolId", "title", "totalPoints", "status"]
+    },
+    "lmsProgress": {
+      "title": "LMS Progress",
+      "description": "Real-time student course mastery, lesson completion, and quiz scores",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "completedLessonIds": { "type": "array", "items": { "type": "string" } },
+        "overallPercentage": { "type": "number" },
+        "lastAccessedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "studentId", "courseId", "schoolId", "overallPercentage"]
+    },
+    "biometricDevices": {
+      "title": "Biometric Devices",
+      "description": "Authorized physical fingerprint terminals and hardware scanners",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "deviceId": { "type": "string" },
+        "deviceName": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "deviceType": { "type": "string", "enum": ["webauthn_bio", "webusb_scanner", "local_bridge", "optical_usb"] },
+        "location": { "type": "string" },
+        "status": { "type": "string", "enum": ["authorized", "revoked", "pending"] },
+        "registeredBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "deviceId", "deviceName", "schoolId", "status", "location"]
+    },
+    "biometricEnrolments": {
+      "title": "Biometric Enrolments",
+      "description": "Biometric cryptographic tokens linked to user UID without raw fingerprints",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "biometricId": { "type": "string" },
+        "firebaseUid": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "fullName": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "teacher", "school_admin", "staff"] },
+        "status": { "type": "string", "enum": ["active", "suspended", "revoked"] },
+        "enrolledAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "biometricId", "firebaseUid", "schoolId", "fullName", "role", "status"]
+    },
+    "attendanceCorrections": {
+      "title": "Attendance Corrections",
+      "description": "Teacher and student attendance correction requests reviewed by school admins",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "attendanceId": { "type": "string" },
+        "date": { "type": "string" },
+        "originalStatus": { "type": "string" },
+        "requestedStatus": { "type": "string" },
+        "reason": { "type": "string" },
+        "requestedBy": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "schoolId", "date", "originalStatus", "requestedStatus", "reason", "requestedBy", "status"]
+    },
+    "userCreatedContent": {
+      "title": "User Created Content",
+      "description": "User-owned content items including voice notes, AI resources, study notes, drafts, and documents",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerUid": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "creatorName": { "type": "string" },
+        "ownerRole": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "type": { "type": "string" },
+        "category": { "type": "string" },
+        "targetClass": { "type": "string" },
+        "isShared": { "type": "boolean" },
+        "shareScope": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerUid", "createdBy", "title", "content", "type"]
+    }
+  },
+  "firestore": {
+    "/userCreatedContent/{contentId}": {
+      "schema": { "$ref": "#/entities/userCreatedContent" },
+      "description": "User-owned educational content, notes, voice dictations, and AI resources"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/users" },
+      "description": "User documents keyed by Auth UID"
+    },
+    "/schools/{schoolId}": {
+      "schema": { "$ref": "#/entities/schools" },
+      "description": "School documents keyed by schoolId"
+    },
+    "/platformSettings/{settingId}": {
+      "schema": { "$ref": "#/entities/platformSettings" },
+      "description": "Global settings accessible only by platform_owner"
+    },
+    "/subscriptionPlans/{planId}": {
+      "schema": { "$ref": "#/entities/subscriptionPlans" },
+      "description": "Subscription plans created by platform_owner"
+    },
+    "/pricingPlans/{planId}": {
+      "schema": { "$ref": "#/entities/pricingPlans" },
+      "description": "Dynamic pricing plans created by platform_owner for marketing site"
+    },
+    "/schoolSubscriptions/{subId}": {
+      "schema": { "$ref": "#/entities/schoolSubscriptions" },
+      "description": "School subscription records"
+    },
+    "/billingInvoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/billingInvoices" },
+      "description": "Platform SaaS subscription invoices"
+    },
+    "/studentInvoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/studentInvoices" },
+      "description": "School tuition and fee billing invoices"
+    },
+    "/studentWallets/{walletId}": {
+      "schema": { "$ref": "#/entities/studentWallets" },
+      "description": "Student digital wallets for canteen and daily services"
+    },
+    "/walletTransactions/{txnId}": {
+      "schema": { "$ref": "#/entities/walletTransactions" },
+      "description": "Immutable ledger of all student wallet transactions"
+    },
+    "/transactions/{txnId}": {
+      "schema": { "$ref": "#/entities/transactions" },
+      "description": "Platform SaaS billing transaction ledger"
+    },
+    "/paymentReceipts/{receiptId}": {
+      "schema": { "$ref": "#/entities/paymentReceipts" },
+      "description": "Verified student payment receipts"
+    },
+    "/paymentMethods/{methodId}": {
+      "schema": { "$ref": "#/entities/paymentMethods" },
+      "description": "Payment methods configured by platform_owner"
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/auditLogs" },
+      "description": "System security and financial audit logs"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/notifications" },
+      "description": "User notifications"
+    },
+    "/notificationSettings/{userId}": {
+      "schema": { "$ref": "#/entities/notificationSettings" },
+      "description": "User notification preferences"
+    },
+    "/emailSettings/{schoolId}": {
+      "schema": { "$ref": "#/entities/emailSettings" },
+      "description": "Email templates and notification toggle settings"
+    },
+    "/schoolDocumentSettings/{schoolId}": {
+      "schema": { "$ref": "#/entities/schoolDocumentSettings" },
+      "description": "School branding, logo, colors, and layout customization for receipts and report cards"
+    },
+    "/fcmTokens/{userId}": {
+      "schema": { "$ref": "#/entities/fcmTokens" },
+      "description": "Browser push notification tokens"
+    },
+    "/lmsCourses/{courseId}": {
+      "schema": { "$ref": "#/entities/lmsCourses" },
+      "description": "Academic course catalog"
+    },
+    "/lmsLessons/{lessonId}": {
+      "schema": { "$ref": "#/entities/lmsLessons" },
+      "description": "Course curriculum lessons"
+    },
+    "/lmsQuizzes/{quizId}": {
+      "schema": { "$ref": "#/entities/lmsQuizzes" },
+      "description": "Interactive course assessments"
+    },
+    "/lmsProgress/{progressId}": {
+      "schema": { "$ref": "#/entities/lmsProgress" },
+      "description": "Real-time student progress tracking records"
+    },
+    "/biometricDevices/{deviceId}": {
+      "schema": { "$ref": "#/entities/biometricDevices" },
+      "description": "Authorized school fingerprint terminals and hardware scanners"
+    },
+    "/biometric_enrolments/{enrolId}": {
+      "schema": { "$ref": "#/entities/biometricEnrolments" },
+      "description": "Enrolled biometric hardware tokens linked to Firebase UIDs"
+    },
+    "/attendanceCorrections/{corrId}": {
+      "schema": { "$ref": "#/entities/attendanceCorrections" },
+      "description": "Attendance correction requests reviewed by school admins"
+    }
+  }
+}

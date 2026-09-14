@@ -1,0 +1,200 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isPlatformOwner() {
+      return isSignedIn() && request.auth.token.email != null && (
+        request.auth.token.email.lower() == 'anastasiaappiahkwaa@gmail.com' ||
+        request.auth.token.email.lower() == 'asamoahkennethemyress@gmail.com' ||
+        request.auth.token.email.lower() == 'kennethasamoa@gmail.com'
+      );
+    }
+
+    function isImageFile() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function isDocumentFile() {
+      return request.resource.contentType.matches('application/pdf') ||
+             request.resource.contentType.matches('application/msword') ||
+             request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.*') ||
+             request.resource.contentType.matches('text/.*') ||
+             request.resource.contentType.matches('image/.*');
+    }
+
+    function isUnderMaxSize(maxMB) {
+      return request.resource.size <= maxMB * 1024 * 1024;
+    }
+
+    // Public marketing assets
+    match /marketing/{allPaths=**} {
+      allow read: if true;
+      allow write: if isPlatformOwner();
+    }
+
+    // School Branding (Logos & Headers) partitioned by schoolId
+    match /schools/{schoolId}/branding/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isImageFile() && isUnderMaxSize(5);
+    }
+
+    // Legacy school logos fallback path
+    match /school_logos/{schoolId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isImageFile() && isUnderMaxSize(5);
+    }
+
+    // Student Passport / Profile Photos (Multi-tenant isolated)
+    match /schools/{schoolId}/students/{studentId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        isPlatformOwner() || 
+        request.auth.uid == studentId ||
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isImageFile() && isUnderMaxSize(5);
+    }
+
+    // Teacher Passport / Profile Photos (Multi-tenant isolated)
+    match /schools/{schoolId}/teachers/{teacherId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        isPlatformOwner() || 
+        request.auth.uid == teacherId ||
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isImageFile() && isUnderMaxSize(5);
+    }
+
+    // Parent Passport / Profile Photos (Multi-tenant isolated)
+    match /schools/{schoolId}/parents/{parentId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        isPlatformOwner() || 
+        request.auth.uid == parentId ||
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isImageFile() && isUnderMaxSize(5);
+    }
+
+    // User profile photos legacy path
+    match /profile_photos/{userId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (request.auth.uid == userId || isPlatformOwner()) && isImageFile() && isUnderMaxSize(5);
+    }
+
+    // Assignment Submissions (Students submit their own work; Teachers/Admins in same school read)
+    match /assignment_submissions/{schoolId}/{studentId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        request.auth.uid == studentId || 
+        isPlatformOwner() ||
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isDocumentFile() && isUnderMaxSize(25);
+    }
+
+    match /submissions/{schoolId}/{studentId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        request.auth.uid == studentId || 
+        isPlatformOwner() ||
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isDocumentFile() && isUnderMaxSize(25);
+    }
+
+    // LMS Course Covers, Lesson Media, Materials & Attachments partitioned by schoolId
+    match /schools/{schoolId}/lms/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        isPlatformOwner() ||
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isUnderMaxSize(100);
+    }
+
+    // Teaching Materials & Assignments partitioned by schoolId
+    match /teachingMaterials/{schoolId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        isPlatformOwner() ||
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isDocumentFile() && isUnderMaxSize(50);
+    }
+
+    match /assignmentFiles/{schoolId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        isPlatformOwner() ||
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isDocumentFile() && isUnderMaxSize(25);
+    }
+
+    match /assignmentFeedback/{schoolId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        isPlatformOwner() ||
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isDocumentFile() && isUnderMaxSize(25);
+    }
+
+    match /leaveAttachments/{schoolId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isDocumentFile() && isUnderMaxSize(10);
+    }
+
+    match /leaveDocs/{schoolId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isDocumentFile() && isUnderMaxSize(10);
+    }
+
+    // Receipts and Academic Report PDFs
+    match /receipts/{schoolId}/{fileName} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.metadata != null && resource.metadata.studentUid == request.auth.uid)
+      );
+      allow write: if isPlatformOwner() && isDocumentFile() && isUnderMaxSize(10);
+    }
+
+    match /report_cards/{schoolId}/{fileName} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.metadata != null && resource.metadata.studentUid == request.auth.uid)
+      );
+      allow write: if isPlatformOwner() && isDocumentFile() && isUnderMaxSize(10);
+    }
+
+    // System backups and database archives
+    match /backups/{allPaths=**} {
+      allow read, write: if isPlatformOwner();
+    }
+
+    // Digital Library (Books, PDFs, covers, study materials) partitioned by schoolId
+    match /schools/{schoolId}/library/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        isPlatformOwner() ||
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isUnderMaxSize(150);
+    }
+
+    match /library/{schoolId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (
+        isPlatformOwner() ||
+        (request.resource.metadata != null && request.resource.metadata.schoolId == schoolId)
+      ) && isUnderMaxSize(150);
+    }
+
+    // Default deny for all other storage paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

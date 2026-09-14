@@ -1,0 +1,1290 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Core Security & Identity Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isPlatformOwnerEmail() {
+      return isSignedIn() && request.auth.token.email != null && (
+        request.auth.token.email.lower() == 'anastasiaappiahkwaa@gmail.com' ||
+        request.auth.token.email.lower() == 'asamoahkennethemyress@gmail.com' ||
+        request.auth.token.email.lower() == 'kennethasamoa@gmail.com'
+      );
+    }
+
+    function isPlatformOwner() {
+      return isPlatformOwnerEmail() || (hasUserProfile() && getUserData().role == 'platform_owner');
+    }
+
+    function hasUserProfile() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSchoolAdmin(schoolId) {
+      return isPlatformOwnerEmail() || (
+        isSignedIn() && schoolId != null && schoolId != '' && (
+          (
+            hasUserProfile() &&
+            (
+              getUserData().schoolId == schoolId ||
+              getUserData().school_id == schoolId
+            ) &&
+            (
+              getUserData().role == 'school_admin' ||
+              getUserData().role == 'school admin' ||
+              getUserData().role == 'schoolAdmin' ||
+              getUserData().role == 'school_head' ||
+              getUserData().role == 'assistant_academics' ||
+              getUserData().role == 'assistant_domestic'
+            )
+          ) ||
+          (
+            request.auth.token.email != null &&
+            exists(/databases/$(database)/documents/schools/$(schoolId)) &&
+            get(/databases/$(database)/documents/schools/$(schoolId)).data.adminEmail != null &&
+            get(/databases/$(database)/documents/schools/$(schoolId)).data.adminEmail.lower() == request.auth.token.email.lower()
+          )
+        )
+      );
+    }
+
+    function isDomesticStaff(schoolId) {
+      return isPlatformOwnerEmail() || (
+        isSignedIn() && schoolId != null && schoolId != '' && (
+          isSchoolAdmin(schoolId) || (
+            hasUserProfile() &&
+            (getUserData().schoolId == schoolId || getUserData().school_id == schoolId) &&
+            (
+              getUserData().role == 'house_master' ||
+              getUserData().role == 'housemaster' ||
+              getUserData().role == 'housekeeping' ||
+              getUserData().role == 'facilities' ||
+              getUserData().role == 'general_services'
+            )
+          )
+        )
+      );
+    }
+
+    function isSchoolMember(schoolId) {
+      return isPlatformOwnerEmail() || (
+        isSignedIn() && schoolId != null && schoolId != '' && (
+          isSchoolAdmin(schoolId) ||
+          (
+            hasUserProfile() &&
+            (
+              getUserData().schoolId == schoolId ||
+              getUserData().school_id == schoolId
+            )
+          )
+        )
+      );
+    }
+
+    function isSchoolTeacher(schoolId) {
+      return isPlatformOwnerEmail() || (
+        isSignedIn() && schoolId != null && schoolId != '' && (
+          isSchoolAdmin(schoolId) ||
+          (
+            hasUserProfile() &&
+            (
+              getUserData().schoolId == schoolId ||
+              getUserData().school_id == schoolId
+            ) &&
+            (
+              getUserData().role == 'teacher' ||
+              getUserData().role == 'school_admin'
+            )
+          )
+        )
+      );
+    }
+
+    function isParentOfStudent(studentDocId) {
+      return isPlatformOwnerEmail() || (
+        isSignedIn() && hasUserProfile() && (
+          getUserData().role == 'parent' && (
+            (getUserData().studentId != null && getUserData().studentId == studentDocId) ||
+            exists(/databases/$(database)/documents/parentStudentRelations/$(request.auth.uid + '_' + studentDocId)) ||
+            exists(/databases/$(database)/documents/parentStudentRelations/$(studentDocId + '_' + request.auth.uid))
+          )
+        )
+      );
+    }
+
+    // Public Marketing, Plans, and System Configuration
+    match /marketing_site/{docId} {
+      allow read: if true;
+      allow write: if isPlatformOwnerEmail();
+    }
+
+    match /pricingPlans/{planId} {
+      allow read: if true;
+      allow write: if isPlatformOwnerEmail();
+    }
+
+    match /subscriptionPlans/{planId} {
+      allow read: if true;
+      allow write: if isPlatformOwnerEmail();
+    }
+
+    // Schools Directory and Registration
+    match /schools/{schoolId} {
+      allow get: if isPlatformOwnerEmail() || 
+        (isSignedIn() && resource.data.adminId != null && request.auth.uid == resource.data.adminId) ||
+        (isSignedIn() && resource.data.adminEmail != null && request.auth.token.email != null && resource.data.adminEmail.lower() == request.auth.token.email.lower()) ||
+        isSchoolMember(schoolId);
+      allow list: if isPlatformOwnerEmail() ||
+        (isSignedIn() && request.auth.token.email != null && (resource.data.adminEmail == request.auth.token.email || resource.data.adminEmail == request.auth.token.email.lower())) ||
+        isSchoolMember(schoolId);
+      allow create: if isSignedIn(); // Allows new school admin self-registration
+      allow update: if (isSignedIn() && resource.data.adminId != null && request.auth.uid == resource.data.adminId) ||
+        isSchoolAdmin(schoolId) || 
+        isPlatformOwnerEmail() || 
+        (isSignedIn() && resource.data.adminEmail != null && request.auth.token.email != null && resource.data.adminEmail.lower() == request.auth.token.email.lower());
+      allow delete: if isPlatformOwnerEmail();
+    }
+
+    // Core User Identity Documents (users/{userId})
+    match /users/{userId} {
+      allow get: if isSignedIn() && (
+        request.auth.uid == userId ||
+        isPlatformOwnerEmail() ||
+        (hasUserProfile() && getUserData().role == 'platform_owner') ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) ||
+        (resource.data.schoolId != null && isSchoolTeacher(resource.data.schoolId)) ||
+        isParentOfStudent(userId) ||
+        (resource.data.email != null && request.auth.token.email != null && (resource.data.email == request.auth.token.email || resource.data.email.lower() == request.auth.token.email.lower()))
+      );
+      allow list: if isSignedIn() && (
+        isPlatformOwnerEmail() ||
+        (hasUserProfile() && getUserData().role == 'platform_owner') ||
+        (request.auth.token.email != null && (resource.data.email == request.auth.token.email || resource.data.email == request.auth.token.email.lower())) ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+      allow create: if isSignedIn() && (
+        (request.auth.uid == userId && (request.resource.data.role != 'platform_owner' || isPlatformOwnerEmail())) || 
+        isPlatformOwnerEmail() || 
+        (request.resource.data.schoolId != null && isSchoolAdmin(request.resource.data.schoolId))
+      );
+      allow update: if isSignedIn() && (
+        request.auth.uid == userId ||
+        isPlatformOwnerEmail() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+      allow delete: if isPlatformOwnerEmail() || 
+        (isSignedIn() && resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) ||
+        (isSignedIn() && resource.data.email != null && request.auth.token.email != null && resource.data.email.lower() == request.auth.token.email.lower());
+    }
+
+    // Sub-role profiles with strict school isolation
+    match /schoolAdmins/{adminId} {
+      allow get: if isSignedIn() && (
+        request.auth.uid == adminId ||
+        (resource.data.uid != null && request.auth.uid == resource.data.uid) ||
+        isPlatformOwnerEmail() || 
+        (resource.data.adminEmail != null && request.auth.token.email != null && resource.data.adminEmail.lower() == request.auth.token.email.lower()) ||
+        isSchoolAdmin(resource.data.schoolId)
+      );
+      allow list: if isSignedIn() && (
+        isPlatformOwnerEmail() ||
+        (request.auth.token.email != null && (resource.data.adminEmail == request.auth.token.email || resource.data.adminEmail == request.auth.token.email.lower())) ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+      allow create: if isSignedIn(); // Allows new school admin self-registration
+      allow update: if isSignedIn() && (
+        request.auth.uid == adminId ||
+        (resource.data.uid != null && request.auth.uid == resource.data.uid) ||
+        isPlatformOwnerEmail() || 
+        isSchoolAdmin(resource.data.schoolId) || 
+        (resource.data.adminEmail != null && request.auth.token.email != null && resource.data.adminEmail.lower() == request.auth.token.email.lower())
+      );
+      allow delete: if isSignedIn() && (isPlatformOwnerEmail() || isSchoolAdmin(resource.data.schoolId));
+    }
+
+    match /teachers/{teacherId} {
+      allow get: if isSignedIn() && (
+        request.auth.uid == teacherId ||
+        (resource.data.uid != null && request.auth.uid == resource.data.uid) ||
+        isPlatformOwnerEmail() || 
+        (resource.data.email != null && request.auth.token.email != null && (resource.data.email == request.auth.token.email || resource.data.email.lower() == request.auth.token.email.lower())) ||
+        (resource.data.schoolId != null && (isSchoolAdmin(resource.data.schoolId) || isSchoolTeacher(resource.data.schoolId)))
+      );
+      allow list: if isSignedIn() && (
+        isPlatformOwnerEmail() ||
+        (request.auth.token.email != null && (resource.data.email == request.auth.token.email || resource.data.email == request.auth.token.email.lower())) ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) ||
+        (resource.data.schoolId != null && isSchoolTeacher(resource.data.schoolId))
+      );
+      allow create: if isSignedIn() && (isPlatformOwnerEmail() || isSchoolAdmin(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (
+        isPlatformOwnerEmail() || 
+        isSchoolAdmin(resource.data.schoolId) || 
+        (resource.data.uid != null && request.auth.uid == resource.data.uid) ||
+        (
+          request.auth.token.email != null &&
+          resource.data.email != null &&
+          (resource.data.email == request.auth.token.email || resource.data.email.lower() == request.auth.token.email.lower()) &&
+          request.resource.data.uid == request.auth.uid
+        )
+      );
+      allow delete: if isSignedIn() && (isPlatformOwnerEmail() || isSchoolAdmin(resource.data.schoolId));
+    }
+
+    match /students/{studentId} {
+      allow get: if isSignedIn() && (
+        request.auth.uid == studentId ||
+        (resource.data.uid != null && request.auth.uid == resource.data.uid) ||
+        isPlatformOwnerEmail() || 
+        (resource.data.email != null && request.auth.token.email != null && (resource.data.email == request.auth.token.email || resource.data.email.lower() == request.auth.token.email.lower())) ||
+        (resource.data.googleEmail != null && request.auth.token.email != null && (resource.data.googleEmail == request.auth.token.email || resource.data.googleEmail.lower() == request.auth.token.email.lower())) ||
+        isParentOfStudent(studentId) ||
+        (resource.data.schoolId != null && (isSchoolAdmin(resource.data.schoolId) || isSchoolTeacher(resource.data.schoolId)))
+      );
+      allow list: if isSignedIn() && (
+        isPlatformOwnerEmail() ||
+        (request.auth.token.email != null && (resource.data.email == request.auth.token.email || resource.data.email == request.auth.token.email.lower())) ||
+        (request.auth.token.email != null && (resource.data.googleEmail == request.auth.token.email || resource.data.googleEmail == request.auth.token.email.lower())) ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) ||
+        (resource.data.schoolId != null && isSchoolTeacher(resource.data.schoolId))
+      );
+      allow create: if isSignedIn() && (isPlatformOwnerEmail() || isSchoolAdmin(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (
+        isPlatformOwnerEmail() || 
+        isSchoolAdmin(resource.data.schoolId) || 
+        (resource.data.uid != null && request.auth.uid == resource.data.uid) ||
+        (
+          request.auth.token.email != null &&
+          (
+            (resource.data.email != null && (resource.data.email == request.auth.token.email || resource.data.email.lower() == request.auth.token.email.lower())) ||
+            (resource.data.googleEmail != null && (resource.data.googleEmail == request.auth.token.email || resource.data.googleEmail == request.auth.token.email.lower()))
+          ) &&
+          request.resource.data.uid == request.auth.uid
+        )
+      );
+      allow delete: if isSignedIn() && (isPlatformOwnerEmail() || isSchoolAdmin(resource.data.schoolId));
+    }
+
+    match /parents/{parentId} {
+      allow get: if isSignedIn() && (
+        request.auth.uid == parentId ||
+        (resource.data.uid != null && request.auth.uid == resource.data.uid) ||
+        isPlatformOwnerEmail() || 
+        (resource.data.email != null && request.auth.token.email != null && (resource.data.email == request.auth.token.email || resource.data.email.lower() == request.auth.token.email.lower())) ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+      allow list: if isSignedIn() && (
+        isPlatformOwnerEmail() ||
+        (request.auth.token.email != null && (resource.data.email == request.auth.token.email || resource.data.email == request.auth.token.email.lower())) ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+      allow create: if isSignedIn() && (isPlatformOwnerEmail() || isSchoolAdmin(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (
+        isPlatformOwnerEmail() || 
+        isSchoolAdmin(resource.data.schoolId) || 
+        (resource.data.uid != null && request.auth.uid == resource.data.uid) ||
+        (
+          request.auth.token.email != null &&
+          resource.data.email != null &&
+          (resource.data.email == request.auth.token.email || resource.data.email.lower() == request.auth.token.email.lower()) &&
+          request.resource.data.uid == request.auth.uid
+        )
+      );
+      allow delete: if isSignedIn() && (isPlatformOwnerEmail() || isSchoolAdmin(resource.data.schoolId));
+    }
+
+    match /parentStudentRelations/{relationId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) ||
+        resource.data.parentUid == request.auth.uid ||
+        resource.data.studentUid == request.auth.uid
+      );
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+      allow delete: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+    }
+
+    // LMS & Educational Modules with School Isolation
+    match /libraryResources/{resourceId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (
+          isSchoolMember(resource.data.schoolId) && (
+            isSchoolTeacher(resource.data.schoolId) ||
+            (
+              resource.data.status == 'published' &&
+              (resource.data.targetAudience == null || resource.data.targetAudience == 'all' || 
+               (hasUserProfile() && getUserData().role == 'student' && (resource.data.targetAudience == 'students' || resource.data.targetAudience == 'all')) ||
+               (hasUserProfile() && getUserData().role == 'parent' && (resource.data.targetAudience == 'parents' || resource.data.targetAudience == 'all')))
+            )
+          )
+        )
+      );
+      allow create: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(request.resource.data.schoolId)
+      );
+      allow update: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolAdmin(resource.data.schoolId) ||
+        (isSchoolTeacher(resource.data.schoolId) && (resource.data.uploaderId == request.auth.uid || request.auth.uid != null))
+      );
+      allow delete: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolAdmin(resource.data.schoolId) ||
+        (isSchoolTeacher(resource.data.schoolId) && resource.data.uploaderId == request.auth.uid)
+      );
+    }
+
+    match /libraryBookmarks/{bookmarkId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId));
+      allow update, delete: if isSignedIn() && (isPlatformOwner() || resource.data.userId == request.auth.uid);
+    }
+
+    match /libraryRecentlyViewed/{historyId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId));
+      allow update, delete: if isSignedIn() && (isPlatformOwner() || resource.data.userId == request.auth.uid);
+    }
+
+    match /libraryProgress/{progressId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || resource.data.userId == request.auth.uid);
+      allow create, update: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && (isPlatformOwner() || resource.data.userId == request.auth.uid);
+    }
+
+    match /borrowRecords/{recordId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /libraryBorrowRecords/{recordId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /libraryDiscussions/{discussionId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /libraryReviews/{reviewId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /lmsCourses/{courseId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /lmsLessons/{lessonId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /lmsMaterials/{matId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /lmsQuizzes/{quizId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /lmsQuizAttempts/{attemptId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        resource.data.userId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(resource.data.schoolId));
+      allow delete: if isPlatformOwner();
+    }
+
+    match /lmsSubmissions/{submissionId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(resource.data.schoolId) || resource.data.studentId == request.auth.uid);
+      allow delete: if isPlatformOwner();
+    }
+
+    match /lmsDiscussions/{discussionId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /lmsProgress/{progressId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create, update: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolMember(request.resource.data.schoolId)
+      );
+      allow delete: if isPlatformOwner() || isSchoolAdmin(resource.data.schoolId);
+    }
+
+    // CBT & Examinations
+    match /cbtQuestions/{questionId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /cbtExams/{examId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /cbtResults/{resultId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        resource.data.userId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(resource.data.schoolId));
+      allow delete: if isPlatformOwner();
+    }
+
+    match /cbtAttempts/{attemptId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(resource.data.schoolId));
+      allow delete: if isPlatformOwner();
+    }
+
+    match /cbtCertificates/{certId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    // Academic Administration, Assignments & Grades (Strict Isolation)
+    match /assignments/{assignmentId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /assignmentSubmissions/{subId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(resource.data.schoolId) || resource.data.studentId == request.auth.uid);
+      allow delete: if isPlatformOwner();
+    }
+
+    match /submissions/{subId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(resource.data.schoolId) || resource.data.studentId == request.auth.uid);
+      allow delete: if isPlatformOwner();
+    }
+
+    match /assignmentComments/{commentId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /examinations/{examId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /marks/{markId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        resource.data.userId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /results/{resultId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        resource.data.userId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /studentResults/{resultId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        resource.data.userId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /subjectResults/{resultId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        resource.data.userId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /resultApprovals/{approvalId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /gradingSystems/{systemId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /schoolDocumentSettings/{schoolId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(schoolId));
+    }
+
+    match /academicReports/{reportId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolMember(resource.data.schoolId) ||
+        resource.data.studentId == request.auth.uid || 
+        resource.data.userId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow write: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId) ||
+        isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId)
+      );
+    }
+
+    match /lessonPlans/{planId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /lessonMaterials/{matId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /learningMaterials/{matId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    // Attendance Records (Strict School Isolation)
+    match /attendance/{attId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) ||
+        (resource.data.studentId != null && resource.data.studentId == request.auth.uid) ||
+        (resource.data.studentUid != null && resource.data.studentUid == request.auth.uid) ||
+        (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
+        (resource.data.studentId != null && isParentOfStudent(resource.data.studentId))
+      );
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId) || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /attendanceLogs/{logId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) ||
+        (resource.data.studentId != null && resource.data.studentId == request.auth.uid) ||
+        (resource.data.studentUid != null && resource.data.studentUid == request.auth.uid) ||
+        (resource.data.userId != null && resource.data.userId == request.auth.uid) ||
+        (resource.data.studentId != null && isParentOfStudent(resource.data.studentId))
+      );
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId) || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /studentAttendance/{attId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        resource.data.studentUid == request.auth.uid || 
+        resource.data.userId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId) || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /teacherAttendance/{attId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId) || (resource.data.teacherUid != null && resource.data.teacherUid == request.auth.uid) || (resource.data.teacherId != null && resource.data.teacherId == request.auth.uid));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /attendanceCorrections/{corrId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolAdmin(resource.data.schoolId) || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.requestedBy == request.auth.uid ||
+        resource.data.studentId == request.auth.uid
+      );
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId || request.resource.data.schoolId));
+    }
+
+    match /transportAttendance/{attId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    // Student & Teacher Administration
+    match /studentBehaviour/{recId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolTeacher(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /studentEnrollments/{enrollId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /teacherLeaveRequests/{reqId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId) || resource.data.teacherId == request.auth.uid || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId) || resource.data.teacherId == request.auth.uid);
+      allow delete: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+    }
+
+    match /leaveRequests/{reqId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId) || resource.data.teacherId == request.auth.uid || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId) || resource.data.teacherId == request.auth.uid);
+      allow delete: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+    }
+
+    match /teacherAssignments/{id} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /timetables/{id} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+      allow delete: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+    }
+
+    match /classes/{id} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+      allow delete: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+    }
+
+    match /subjects/{id} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+      allow delete: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+    }
+
+    // Communication, Announcements, Calendar & Events
+    match /announcements/{id} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /events/{id} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /schoolCalendar/{id} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /messages/{id} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        resource.data.senderId == request.auth.uid || 
+        resource.data.receiverId == request.auth.uid || 
+        resource.data.recipientId == request.auth.uid || 
+        resource.data.userId == request.auth.uid
+      );
+      allow create: if isSignedIn() && (isPlatformOwner() || request.resource.data.senderId == request.auth.uid || request.resource.data.userId == request.auth.uid);
+      allow update: if isSignedIn() && (isPlatformOwner() || resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      allow delete: if isSignedIn() && (isPlatformOwner() || resource.data.senderId == request.auth.uid);
+    }
+
+    match /teacherMessages/{id} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        resource.data.senderId == request.auth.uid || 
+        resource.data.receiverId == request.auth.uid || 
+        resource.data.recipientId == request.auth.uid
+      );
+      allow create: if isSignedIn() && (isPlatformOwner() || request.resource.data.senderId == request.auth.uid);
+      allow update: if isSignedIn() && (isPlatformOwner() || resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+      allow delete: if isSignedIn() && (isPlatformOwner() || resource.data.senderId == request.auth.uid);
+    }
+
+    match /teacherVoiceNotes/{id} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        resource.data.teacherId == request.auth.uid || 
+        resource.data.ownerUid == request.auth.uid || 
+        resource.data.createdBy == request.auth.uid || 
+        resource.data.senderId == request.auth.uid || 
+        resource.data.receiverId == request.auth.uid || 
+        resource.data.recipientId == request.auth.uid ||
+        resource.data.studentId == request.auth.uid ||
+        (resource.data.isSharedWithClass == true && isSchoolMember(resource.data.schoolId)) ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+      allow create: if isSignedIn() && (
+        isPlatformOwner() || 
+        request.resource.data.teacherId == request.auth.uid || 
+        request.resource.data.ownerUid == request.auth.uid || 
+        request.resource.data.createdBy == request.auth.uid || 
+        request.resource.data.senderId == request.auth.uid
+      );
+      allow update: if isSignedIn() && (
+        isPlatformOwner() || 
+        resource.data.teacherId == request.auth.uid || 
+        resource.data.ownerUid == request.auth.uid || 
+        resource.data.createdBy == request.auth.uid || 
+        resource.data.senderId == request.auth.uid ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+      allow delete: if isSignedIn() && (
+        isPlatformOwner() || 
+        resource.data.teacherId == request.auth.uid || 
+        resource.data.ownerUid == request.auth.uid || 
+        resource.data.createdBy == request.auth.uid || 
+        resource.data.senderId == request.auth.uid ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+    }
+
+    // User Created Content: AI Resources, Voice Dictation, Notes, Documents, Drafts, Personal Saved Content
+    match /userCreatedContent/{contentId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() ||
+        resource.data.ownerUid == request.auth.uid ||
+        resource.data.createdBy == request.auth.uid ||
+        (
+          resource.data.isShared == true && 
+          (isSchoolMember(resource.data.schoolId) || isSchoolTeacher(resource.data.schoolId))
+        ) ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+      allow create: if isSignedIn() && (
+        isPlatformOwner() ||
+        request.resource.data.ownerUid == request.auth.uid ||
+        request.resource.data.createdBy == request.auth.uid
+      );
+      allow update: if isSignedIn() && (
+        isPlatformOwner() ||
+        resource.data.ownerUid == request.auth.uid ||
+        resource.data.createdBy == request.auth.uid ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId) && resource.data.ownerRole != 'platform_owner')
+      );
+      allow delete: if isSignedIn() && (
+        isPlatformOwner() ||
+        resource.data.ownerUid == request.auth.uid ||
+        resource.data.createdBy == request.auth.uid ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId) && resource.data.ownerRole != 'platform_owner')
+      );
+    }
+
+    match /documents/{id} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    // Notifications (Locked down: user-specific only)
+    match /notifications/{id} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        resource.data.userId == request.auth.uid || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (isPlatformOwner() || resource.data.userId == request.auth.uid);
+      allow delete: if isSignedIn() && (isPlatformOwner() || resource.data.userId == request.auth.uid);
+    }
+
+    match /notificationSettings/{userId} {
+      allow read, write: if isSignedIn() && (request.auth.uid == userId || isPlatformOwner());
+    }
+
+    match /emailTemplates/{templateId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+      allow write: if isPlatformOwner() || (isSignedIn() && isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /fcmTokens/{tokenId} {
+      allow read, write: if isSignedIn() && (request.auth.uid == tokenId || isPlatformOwner() || (resource.data.userId != null && resource.data.userId == request.auth.uid));
+    }
+
+    // Daily Services, Canteen, Wallet & Transport
+    match /dailyServices/{serviceId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    // FINANCIAL FORTRESS: Student Wallets
+    // Students/Parents can read their own wallet, School Admins can manage within their school
+    match /studentWallets/{walletId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) || 
+        resource.data.studentId == request.auth.uid || 
+        resource.data.userId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create, update: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.data.schoolId != null && isSchoolAdmin(request.resource.data.schoolId))
+      );
+      allow delete: if isPlatformOwner();
+    }
+
+    // FINANCIAL FORTRESS: Immutable Wallet Transaction Ledger
+    // Strictly authenticated, immutably recorded
+    match /walletTransactions/{txnId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) || 
+        resource.data.studentId == request.auth.uid || 
+        resource.data.userId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.data.schoolId != null && isSchoolMember(request.resource.data.schoolId))
+      );
+      allow update, delete: if false; // STRICT IMMUTABILITY
+    }
+
+    match /canteenMenu/{itemId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /canteenOrders/{orderId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolAdmin(resource.data.schoolId) || 
+        resource.data.studentId == request.auth.uid || 
+        resource.data.userId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId));
+      allow update: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId));
+      allow delete: if isPlatformOwner();
+    }
+
+    match /shopProducts/{productId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /transportBuses/{busId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /transportRoutes/{routeId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    // Google Forms & Workspace Integrations
+    match /googleForms/{formId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    // VLE & Virtual Classroom
+    match /googleMeetClasses/{meetId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /virtualClassroomWhiteboardSessions/{sessionId} {
+      allow read, write: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId || request.resource.data.schoolId));
+    }
+
+    match /virtualClassroomWhiteboards/{wbId} {
+      allow read, write: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId || request.resource.data.schoolId));
+    }
+
+    match /virtualClassroomChats/{chatId} {
+      allow read, write: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId || request.resource.data.schoolId));
+    }
+
+    match /virtualClassroomHandRaises/{handId} {
+      allow read, write: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId || request.resource.data.schoolId));
+    }
+
+    match /virtualClassroomMaterials/{matId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /virtualClassroomQuizzes/{quizId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /virtualClassroomQuizResponses/{respId} {
+      allow read, write: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId || request.resource.data.schoolId));
+    }
+
+    match /virtualClassroomAiNotes/{noteId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /onlineClassAttendance/{attId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    // FINANCIAL FORTRESS: Billing Invoices & Student Invoices
+    match /billingInvoices/{invoiceId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+      allow create, update: if isPlatformOwner();
+      allow delete: if isPlatformOwner();
+    }
+
+    match /studentInvoices/{invoiceId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) || 
+        resource.data.studentId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create, update, delete: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.data.schoolId != null && isSchoolAdmin(request.resource.data.schoolId)) || 
+        (resource != null && resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+    }
+
+    // FINANCIAL FORTRESS: Transactions & Billing Transactions (Immutable)
+    match /transactions/{txnId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) || 
+        resource.data.userId == request.auth.uid || 
+        resource.data.studentId == request.auth.uid ||
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.data.schoolId != null && isSchoolMember(request.resource.data.schoolId))
+      );
+      allow update, delete: if false; // STRICT IMMUTABILITY
+    }
+
+    match /billingTransactions/{txnId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) || 
+        resource.data.userId == request.auth.uid || 
+        resource.data.studentId == request.auth.uid
+      );
+      allow create: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.data.schoolId != null && isSchoolMember(request.resource.data.schoolId))
+      );
+      allow update, delete: if false; // STRICT IMMUTABILITY
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) || 
+        resource.data.userId == request.auth.uid || 
+        resource.data.studentId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.data.schoolId != null && isSchoolMember(request.resource.data.schoolId))
+      );
+      allow update: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+      allow delete: if false; // Prevent payment deletion
+    }
+
+    match /paymentReceipts/{receiptId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) || 
+        resource.data.userId == request.auth.uid || 
+        resource.data.studentId == request.auth.uid || 
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.data.schoolId != null && isSchoolMember(request.resource.data.schoolId))
+      );
+      allow update, delete: if false; // IMMUTABLE RECEIPTS
+    }
+
+    match /schoolFees/{feeId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isPlatformOwner() || (isSignedIn() && isSchoolAdmin(resource.data.schoolId || request.resource.data.schoolId));
+    }
+
+    match /paymentMethods/{methodId} {
+      allow read: if isSignedIn();
+      allow write: if isPlatformOwner();
+    }
+
+    match /schoolSubscriptions/{subId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolMember(resource.data.schoolId))
+      );
+      allow write: if isPlatformOwner();
+    }
+
+    // Biometric Credentials & Audit Logs (Multi-tenant secured)
+    match /biometricDevices/{devId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolMember(resource.data.schoolId))
+      );
+      allow write: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.data.schoolId != null && isSchoolAdmin(request.resource.data.schoolId)) ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+    }
+
+    match /biometric_devices/{devId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolMember(resource.data.schoolId))
+      );
+      allow write: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.data.schoolId != null && isSchoolAdmin(request.resource.data.schoolId)) ||
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      );
+    }
+
+    match /biometricCredentials/{credId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) || 
+        resource.data.userId == request.auth.uid || 
+        request.auth.uid == credId
+      );
+      allow write: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.data.schoolId != null && isSchoolAdmin(request.resource.data.schoolId)) || 
+        request.auth.uid == credId || 
+        request.resource.data.userId == request.auth.uid
+      );
+    }
+
+    match /biometric_credentials/{credId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) || 
+        resource.data.userId == request.auth.uid || 
+        request.auth.uid == credId
+      );
+      allow write: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.data.schoolId != null && isSchoolAdmin(request.resource.data.schoolId)) || 
+        request.auth.uid == credId || 
+        request.resource.data.userId == request.auth.uid
+      );
+    }
+
+    match /biometric_enrolments/{credId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)) || 
+        resource.data.userId == request.auth.uid || 
+        request.auth.uid == credId
+      );
+      allow write: if isSignedIn() && (
+        isPlatformOwner() || 
+        (request.resource.data.schoolId != null && isSchoolAdmin(request.resource.data.schoolId)) || 
+        request.auth.uid == credId || 
+        request.resource.data.userId == request.auth.uid
+      );
+    }
+
+    match /biometricAuditLogs/{logId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)));
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    match /biometric_audit_logs/{logId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)));
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    match /biometric_logs/{logId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)));
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)));
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Immutable audit log
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)));
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Immutable audit log
+    }
+
+    match /financeAuditLogs/{logId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || (resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId)));
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    match /mealPreOrders/{orderId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolMember(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /googleMeetRecordings/{recId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isSchoolTeacher(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /backupHistory/{backupId} {
+      allow read, write: if isPlatformOwner();
+    }
+
+    match /restoreHistory/{restoreId} {
+      allow read, write: if isPlatformOwner();
+    }
+
+    match /importHistory/{id} {
+      allow read, write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId || request.resource.data.schoolId));
+    }
+
+    match /exportHistory/{id} {
+      allow read, write: if isSignedIn() && (isPlatformOwner() || isSchoolAdmin(resource.data.schoolId || request.resource.data.schoolId));
+    }
+
+    match /backups/{backupId} {
+      allow read, write: if isPlatformOwner();
+    }
+
+    match /restoreLogs/{restoreId} {
+      allow read, write: if isPlatformOwner();
+    }
+
+    // Senior High Boarding & Domestic Operations
+    match /boardingHouses/{houseId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isDomesticStaff(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    match /exeatRequests/{exeatId} {
+      allow read: if isSignedIn() && (
+        isPlatformOwner() || 
+        isDomesticStaff(resource.data.schoolId) ||
+        resource.data.studentId == request.auth.uid ||
+        resource.data.studentEmail == request.auth.token.email ||
+        isParentOfStudent(resource.data.studentId)
+      );
+      allow create: if isSignedIn() && (
+        isPlatformOwner() || 
+        isDomesticStaff(request.resource.data.schoolId) ||
+        request.resource.data.studentId == request.auth.uid ||
+        isParentOfStudent(request.resource.data.studentId)
+      );
+      allow update: if isSignedIn() && (
+        isPlatformOwner() || 
+        isDomesticStaff(resource.data.schoolId)
+      );
+      allow delete: if isSignedIn() && (
+        isPlatformOwner() || 
+        isSchoolAdmin(resource.data.schoolId)
+      );
+    }
+
+    match /maintenanceWorkOrders/{orderId} {
+      allow read: if isSignedIn() && (isPlatformOwner() || isSchoolMember(resource.data.schoolId));
+      allow write: if isSignedIn() && (isPlatformOwner() || isDomesticStaff(request.resource.data.schoolId || resource.data.schoolId));
+    }
+
+    // Default catch-all: Deny all unauthenticated or unhandled access
+    match /{document=**} {
+      allow read, write: if isPlatformOwner();
+    }
+  }
+}

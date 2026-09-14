@@ -1,0 +1,10 @@
+{
+  "name": "Remix EDUkenZA",
+  "description": "Multi-school management system SaaS platform empowering schools with smarter administration, academics, and communication.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
