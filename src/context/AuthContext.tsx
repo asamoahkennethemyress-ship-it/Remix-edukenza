@@ -3,6 +3,8 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut as firebaseSignOut, 
   sendPasswordResetEmail as firebaseSendPasswordResetEmail,
   onAuthStateChanged,
@@ -22,7 +24,19 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { UserProfile, SchoolAccount, UserRole, ActiveView, RegistrationFormData, EducationCategory } from '../types';
-import { auth, db, googleProvider, STORAGE_KEYS, getSavedSchools, saveSchoolAccount, handleFirestoreError, OperationType, firebaseConfig } from '../firebase/config';
+import { 
+  auth, 
+  db, 
+  googleProvider, 
+  createGoogleProvider,
+  browserPopupRedirectResolver, 
+  STORAGE_KEYS, 
+  getSavedSchools, 
+  saveSchoolAccount, 
+  handleFirestoreError, 
+  OperationType, 
+  firebaseConfig 
+} from '../firebase/config';
 import { PRIMARY_PLATFORM_OWNER_EMAIL, isPlatformOwnerEmail, enforceProtectedRole, isSchoolAdminRole, normalizeRole, parseValidRole } from '../utils/permissions';
 import { parseAuthError } from '../utils/authErrors';
 import { formatStudentAuthEmail, parseStudentAuthError } from '../utils/studentAuthHelper';
@@ -794,6 +808,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Firebase Auth Observer (Strict user retrieval by UID)
   useEffect(() => {
+    // Check for incoming redirect sign-in result if returning from a mobile redirect
+    getRedirectResult(auth, browserPopupRedirectResolver).then(async (redirectCredential) => {
+      if (redirectCredential?.user) {
+        console.log('[AUTH REDIRECT] Successfully retrieved redirect credential for:', redirectCredential.user.email);
+      }
+    }).catch((redirectErr: any) => {
+      if (redirectErr?.code && redirectErr.code !== 'auth/credential-already-in-use') {
+        console.warn('[AUTH REDIRECT NOTICE]', redirectErr.code, redirectErr.message);
+      }
+    });
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       authLoggingMiddleware.logAuthStateChange(firebaseUser, 'onAuthStateChanged');
 
@@ -1210,7 +1235,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       let userCredential: any = null;
       try {
-        userCredential = await signInWithPopup(auth, googleProvider);
+        const provider = createGoogleProvider();
+        userCredential = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
       } catch (authErr: any) {
         console.warn('[STUDENT GOOGLE AUTH] signInWithPopup error:', authErr);
         isAuthenticatingRef.current = false;
@@ -1498,7 +1524,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       // Step 1: Execute Google OAuth via Firebase Authentication
-      const userCredential = await signInWithPopup(auth, googleProvider);
+      const provider = createGoogleProvider();
+      const userCredential = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
       const user = userCredential.user;
       if (!user) {
         isAuthenticatingRef.current = false;
@@ -2075,7 +2102,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isAuthenticatingRef.current = true;
     try {
       // 1. Google Authentication via Firebase Auth Popup
-      const userCredential = await signInWithPopup(auth, googleProvider);
+      const provider = createGoogleProvider();
+      const userCredential = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
       const googleUser = userCredential.user;
       if (!googleUser) {
         const msg = 'Google authentication was cancelled or failed.';

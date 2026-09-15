@@ -24,7 +24,7 @@ export const Footer: React.FC = () => {
   };
 
   return (
-    <footer className="bg-[#002147] text-slate-300 border-t-4 border-[#D4AF37] pt-12 pb-8">
+    <footer className="bg-[#002147] text-slate-300 border-t-4 border-[#D4AF37] pt-12 pb-[calc(2rem+env(safe-area-inset-bottom,0px))]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
         
         {/* Main Footer Links */}

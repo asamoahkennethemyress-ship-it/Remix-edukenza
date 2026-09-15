@@ -169,24 +169,36 @@ export async function fetchAllSubscriptionPlans(): Promise<SubscriptionPlan[]> {
     const snapshot = await getDocs(q);
 
     if (snapshot.empty) {
-      // Seed default plans automatically if collection is empty
-      console.log('[Billing Service] Seeding default subscription plans to Firestore...');
-      const seededPlans: SubscriptionPlan[] = [];
-      for (const p of DEFAULT_SUBSCRIPTION_PLANS) {
-        const docRef = await addDoc(colRef, {
-          ...p,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
-        seededPlans.push({ id: docRef.id, ...p });
+      // Return default plans immediately and attempt background seeding only if permitted
+      const defaultList = DEFAULT_SUBSCRIPTION_PLANS.map((p, idx) => ({ 
+        id: `plan-${idx + 1}`, 
+        ...p 
+      })) as SubscriptionPlan[];
+
+      try {
+        const seededPlans: SubscriptionPlan[] = [];
+        for (const p of DEFAULT_SUBSCRIPTION_PLANS) {
+          const docRef = await addDoc(colRef, {
+            ...p,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+          seededPlans.push({ id: docRef.id, ...p });
+        }
+        return seededPlans;
+      } catch (seedErr) {
+        // Seeding permitted only for platform owners; safe fallback for other visitors
+        return defaultList;
       }
-      return seededPlans;
     }
 
     return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as SubscriptionPlan));
   } catch (err) {
-    console.error('Error fetching subscription plans:', err);
-    return [];
+    console.warn('Subscription plans query notice (using fallback tiers):', err);
+    return DEFAULT_SUBSCRIPTION_PLANS.map((p, idx) => ({ 
+      id: `plan-${idx + 1}`, 
+      ...p 
+    })) as SubscriptionPlan[];
   }
 }
 
@@ -264,7 +276,7 @@ export async function fetchAllSchoolSubscriptions(): Promise<SchoolSubscription[
     const snapshot = await getDocs(colRef);
     return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as SchoolSubscription));
   } catch (err) {
-    console.error('Error fetching all school subscriptions:', err);
+    console.warn('Notice fetching all school subscriptions:', err);
     return [];
   }
 }

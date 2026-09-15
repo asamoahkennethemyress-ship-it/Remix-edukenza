@@ -4,23 +4,83 @@
  */
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { 
+  getAuth, 
+  initializeAuth, 
+  indexedDBLocalPersistence, 
+  browserLocalPersistence, 
+  browserSessionPersistence,
+  browserPopupRedirectResolver,
+  GoogleAuthProvider 
+} from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { UserProfile, SchoolAccount } from '../types';
-import firebaseConfig from '../../firebase-applet-config.json';
-export { firebaseConfig };
+import rawFirebaseConfig from '../../firebase-applet-config.json';
 
-// Initialize Firebase App & Services
+const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
+
+function sanitizeConfigValue(val: any): string | undefined {
+  if (typeof val !== 'string') return undefined;
+  // Remove wrapping quotes, commas, spaces, or stray punctuation
+  const cleaned = val.replace(/^["']|["',]+$/g, '').trim();
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
+// Active Firebase Configuration with support for production Vercel environment variable overrides
+export const firebaseConfig = {
+  projectId: 'edukenza-2ab0',
+  authDomain: 'edukenza-2ab0.firebaseapp.com',
+  storageBucket: 'edukenza-2ab0.firebasestorage.app',
+  apiKey: sanitizeConfigValue(metaEnv?.VITE_FIREBASE_API_KEY) || rawFirebaseConfig.apiKey || 'AIzaSyCbIbeyet9cOf1V18cmB7rQfrbwERNltAI',
+  appId: sanitizeConfigValue(metaEnv?.VITE_FIREBASE_APP_ID) || rawFirebaseConfig.appId || '1:782147626491:web:e32e1b2c7389f403aa975e',
+  messagingSenderId: sanitizeConfigValue(metaEnv?.VITE_FIREBASE_MESSAGING_SENDER_ID) || rawFirebaseConfig.messagingSenderId || '782147626491',
+  measurementId: sanitizeConfigValue(metaEnv?.VITE_FIREBASE_MEASUREMENT_ID) || rawFirebaseConfig.measurementId || '',
+  oAuthClientId: sanitizeConfigValue(metaEnv?.VITE_FIREBASE_OAUTH_CLIENT_ID) || rawFirebaseConfig.oAuthClientId || '782147626491-3hir9reluoftdi7mg2ueve72evs6h70t.apps.googleusercontent.com',
+  firestoreDatabaseId: 'ai-studio-remixedukenza-e7c63526-01e3-4b16-897a-39990509a023',
+  recaptchaSiteKey: (rawFirebaseConfig as any).recaptchaSiteKey || ''
+};
+
+// Initialize Firebase App & Services (single instance guarantee)
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({
-  prompt: 'select_account'
-});
-const configWithDbId = firebaseConfig as typeof firebaseConfig & { firestoreDatabaseId?: string };
-export const db = configWithDbId.firestoreDatabaseId
-  ? getFirestore(app, configWithDbId.firestoreDatabaseId)
+
+// Initialize Firebase Auth with browserPopupRedirectResolver and indexedDBLocalPersistence
+// This prevents auth/argument-error when executing signInWithPopup in the browser
+let authInstance: any;
+try {
+  authInstance = getAuth(app);
+} catch {
+  authInstance = initializeAuth(app, {
+    persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
+    popupRedirectResolver: browserPopupRedirectResolver,
+  });
+}
+
+// Ensure popupRedirectResolver is guaranteed on the auth instance
+if (authInstance && !authInstance._popupRedirectResolver) {
+  try {
+    authInstance._popupRedirectResolver = browserPopupRedirectResolver;
+  } catch {}
+}
+
+export const auth = authInstance;
+export { browserPopupRedirectResolver };
+
+/**
+ * Helper to construct a clean, valid GoogleAuthProvider instance with proper parameters
+ */
+export function createGoogleProvider(): GoogleAuthProvider {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({
+    prompt: 'select_account'
+  });
+  return provider;
+}
+
+export const googleProvider = createGoogleProvider();
+const targetDbId = firebaseConfig.firestoreDatabaseId;
+export const db = (targetDbId && targetDbId !== '(default)' && targetDbId.trim() !== '')
+  ? getFirestore(app, targetDbId)
   : getFirestore(app);
 export const storage = getStorage(app);
 

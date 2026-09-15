@@ -385,6 +385,7 @@ export const CbtMainDashboard: React.FC<CbtMainDashboardProps> = ({
         <CbtQuestionBankView
           questions={questions}
           subjects={subjects}
+          schoolId={schoolId}
           onOpenCreateQuestion={() => {
             setQuestionToEdit(null);
             setIsQuestionEditorOpen(true);

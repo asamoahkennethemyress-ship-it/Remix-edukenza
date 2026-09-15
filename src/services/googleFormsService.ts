@@ -11,7 +11,7 @@ import {
   onSnapshot, 
   serverTimestamp 
 } from 'firebase/firestore';
-import { db, auth } from '../firebase/config';
+import { db, auth, browserPopupRedirectResolver } from '../firebase/config';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 
 export interface GoogleFormItem {
@@ -100,7 +100,7 @@ export async function getGoogleFormsAccessToken(forcePrompt = false): Promise<st
   }
 
   try {
-    const result = await signInWithPopup(auth, provider);
+    const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
       throw new Error('Google did not return an OAuth access token for Google Forms.');

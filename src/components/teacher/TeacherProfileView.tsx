@@ -246,12 +246,12 @@ export const TeacherProfileView: React.FC<TeacherProfileViewProps> = ({
 
             <div className="p-3 bg-white rounded-2xl border border-slate-200">
               <span className="text-[10px] text-slate-400 font-bold uppercase">School Institution</span>
-              <p className="font-bold text-[#002147] mt-0.5">{currentUser?.schoolName || 'EDUkenZA Academy'}</p>
+              <p className="font-bold text-[#002147] mt-0.5">{currentUser?.schoolName || 'Not Assigned'}</p>
             </div>
 
             <div className="p-3 bg-white rounded-2xl border border-slate-200">
               <span className="text-[10px] text-slate-400 font-bold uppercase">School ID</span>
-              <p className="font-mono text-slate-600 mt-0.5 truncate">{currentUser?.schoolId || 'SCH-001'}</p>
+              <p className="font-mono text-slate-600 mt-0.5 truncate">{currentUser?.schoolId || 'N/A'}</p>
             </div>
 
             <div className="p-3 bg-white rounded-2xl border border-slate-200 md:col-span-2">

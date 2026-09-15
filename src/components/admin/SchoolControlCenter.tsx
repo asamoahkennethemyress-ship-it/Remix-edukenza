@@ -98,35 +98,7 @@ export const SchoolControlCenter: React.FC<SchoolControlCenterProps> = ({
 
       // Sort by timestamp descending locally
       fetched.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
-
-      if (fetched.length === 0) {
-        // Initial sample audit log entries if empty
-        const initialLogs = [
-          {
-            id: 'log-1',
-            action: 'Settings Updated',
-            performedBy: schoolProfile?.name || 'School Admin',
-            userRole: 'school_admin',
-            schoolId,
-            timestamp: new Date().toISOString(),
-            affectedRecord: 'School Branding & Academic Term',
-            details: 'Configured academic term to 2025/2026 Term 1.'
-          },
-          {
-            id: 'log-2',
-            action: 'Result Approved',
-            performedBy: schoolProfile?.name || 'School Admin',
-            userRole: 'school_admin',
-            schoolId,
-            timestamp: new Date(Date.now() - 3600000 * 4).toISOString(),
-            affectedRecord: 'Basic 7 - Mathematics',
-            details: 'Approved term 1 result scores.'
-          }
-        ];
-        setAuditLogs(initialLogs);
-      } else {
-        setAuditLogs(fetched);
-      }
+      setAuditLogs(fetched);
     } catch (err) {
       console.error('Error fetching audit logs:', err);
       handleFirestoreError(err, OperationType.GET, 'auditLogs');

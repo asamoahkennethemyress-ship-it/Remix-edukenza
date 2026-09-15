@@ -127,12 +127,12 @@ service cloud.firestore {
 
     match /pricingPlans/{planId} {
       allow read: if true;
-      allow write: if isPlatformOwnerEmail();
+      allow write: if isPlatformOwner();
     }
 
     match /subscriptionPlans/{planId} {
       allow read: if true;
-      allow write: if isPlatformOwnerEmail();
+      allow write: if isPlatformOwner();
     }
 
     // Schools Directory and Registration
@@ -1100,11 +1100,11 @@ service cloud.firestore {
     }
 
     match /schoolSubscriptions/{subId} {
-      allow read: if isSignedIn() && (
-        isPlatformOwner() || 
-        (resource.data.schoolId != null && isSchoolMember(resource.data.schoolId))
-      );
-      allow write: if isPlatformOwner();
+      allow read: if isSignedIn() && (isPlatformOwner() || (resource.data.schoolId != null && isSchoolMember(resource.data.schoolId)));
+      allow write: if isPlatformOwner() || (isSignedIn() && (
+        (request.resource.data.schoolId != null && isSchoolAdmin(request.resource.data.schoolId)) ||
+        (resource != null && resource.data.schoolId != null && isSchoolAdmin(resource.data.schoolId))
+      ));
     }
 
     // Biometric Credentials & Audit Logs (Multi-tenant secured)

@@ -937,21 +937,48 @@ Include:
 // 8. SERVER-SIDE FIRESTORE DEBUG UTILITIES
 // -------------------------------------------------------------
 
+function sanitizeEnvVal(val: any): string | undefined {
+  if (typeof val !== 'string') return undefined;
+  const cleaned = val.replace(/^["']|["',]+$/g, '').trim();
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
 function getFirebaseConfig() {
+  let fileConfig: any = {};
   try {
     const configPath = path.join(process.cwd(), "firebase-applet-config.json");
     if (fs.existsSync(configPath)) {
       const raw = fs.readFileSync(configPath, "utf-8");
-      return JSON.parse(raw);
+      fileConfig = JSON.parse(raw);
     }
   } catch (e) {
     console.error("Failed to read firebase-applet-config.json", e);
   }
+
+  let pid = sanitizeEnvVal(process.env.VITE_FIREBASE_PROJECT_ID) || sanitizeEnvVal(process.env.FIREBASE_PROJECT_ID) || fileConfig.projectId || "edukenza-2ab0";
+  if (pid.includes("edukenza-2abc0") || !pid) {
+    pid = "edukenza-2ab0";
+  }
+
+  let authDom = sanitizeEnvVal(process.env.VITE_FIREBASE_AUTH_DOMAIN) || fileConfig.authDomain || "edukenza-2ab0.firebaseapp.com";
+  if (authDom.includes("edukenza-2abc0") || !authDom) {
+    authDom = "edukenza-2ab0.firebaseapp.com";
+  }
+
+  let storBucket = sanitizeEnvVal(process.env.VITE_FIREBASE_STORAGE_BUCKET) || fileConfig.storageBucket || "edukenza-2ab0.firebasestorage.app";
+  if (storBucket.includes("edukenza-2abc0") || !storBucket) {
+    storBucket = "edukenza-2ab0.firebasestorage.app";
+  }
+
+  const dbId = "ai-studio-remixedukenza-e7c63526-01e3-4b16-897a-39990509a023";
+  const apiKey = sanitizeEnvVal(process.env.VITE_FIREBASE_API_KEY) || fileConfig.apiKey || "AIzaSyCbIbeyet9cOf1V18cmB7rQfrbwERNltAI";
+
   return {
-    projectId: "edukenza-2abc0",
-    firestoreDatabaseId: "ai-studio-remixedukenza-e7c63526-01e3-4b16-897a-39990509a023",
-    apiKey: "AIzaSyCyNPOz3Dd6xy30JjZA6UHp_GOBLxJy95A",
-    authDomain: "mindful-handbook-v7c1c.firebaseapp.com"
+    projectId: pid,
+    firestoreDatabaseId: dbId,
+    apiKey,
+    authDomain: authDom,
+    storageBucket: storBucket
   };
 }
 
@@ -971,8 +998,8 @@ function getServerFirestore() {
 // Endpoint: Real-time Firebase Authentication Provider Health Check
 app.get("/api/auth/status", async (req, res) => {
   const config = getFirebaseConfig();
-  const apiKey = config.apiKey || "AIzaSyCyNPOz3Dd6xy30JjZA6UHp_GOBLxJy95A";
-  const projectId = config.projectId || "edukenza-2abc0";
+  const apiKey = config.apiKey || "AIzaSyCbIbeyet9cOf1V18cmB7rQfrbwERNltAI";
+  const projectId = config.projectId || "edukenza-2ab0";
 
   try {
     const probeRes = await fetch(
@@ -997,6 +1024,7 @@ app.get("/api/auth/status", async (req, res) => {
 
     res.json({
       projectId,
+      firestoreDatabaseId: config.firestoreDatabaseId,
       apiKeyPresent: !!apiKey,
       emailPasswordProviderEnabled: !isPasswordDisabled,
       rawStatus: errorMsg || "OK",
@@ -1022,6 +1050,49 @@ app.get("/api/auth/status", async (req, res) => {
     res.status(500).json({
       projectId,
       error: err?.message || "Failed to check Firebase Auth status"
+    });
+  }
+});
+
+// Endpoint: Server-Side Firestore User Record Verification
+app.get("/api/debug/check-user", async (req, res) => {
+  const emailParam = String(req.query.email || "").trim().toLowerCase();
+  const config = getFirebaseConfig();
+
+  if (!emailParam) {
+    return res.status(400).json({ error: "Missing email parameter" });
+  }
+
+  try {
+    const db = getServerFirestore();
+    const usersCol = collection(db, "users");
+    const q = query(usersCol, where("email", "==", emailParam));
+    const snap = await getDocs(q);
+
+    const matches: any[] = [];
+    snap.forEach((d) => {
+      matches.push({ id: d.id, ...d.data() });
+    });
+
+    const first = matches[0] || null;
+
+    res.json({
+      projectId: config.projectId,
+      firestoreDatabaseId: config.firestoreDatabaseId,
+      targetEmail: emailParam,
+      recordExists: matches.length > 0,
+      storedUid: first?.id || null,
+      userData: first,
+      allMatchingRecords: matches,
+      count: matches.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err: any) {
+    console.error("[CHECK-USER ERROR]", err);
+    res.status(500).json({
+      projectId: config.projectId,
+      firestoreDatabaseId: config.firestoreDatabaseId,
+      error: err?.message || "Failed to query Firestore users collection"
     });
   }
 });

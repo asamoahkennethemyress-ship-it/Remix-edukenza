@@ -86,10 +86,10 @@ export async function createAuthUserWithoutLoggingIn(
         functionName: responsibleFunction,
         action: 'USER_CREATION',
         email: cleanEmail,
-        details: 'Email/Password provider is disabled in Firebase Auth settings for project edukenza-2abc0.'
+        details: 'Email/Password provider is disabled in Firebase Auth settings for project edukenza-2ab0.'
       });
       throw new Error(
-        'Student registration failed: The Email/Password authentication provider is disabled in Firebase project "edukenza-2abc0". Please enable Email/Password under Firebase Console > Authentication > Sign-in method.'
+        'Student registration failed: The Email/Password authentication provider is disabled in Firebase project "edukenza-2ab0". Please enable Email/Password under Firebase Console > Authentication > Sign-in method.'
       );
     }
 

@@ -1,0 +1,9 @@
+{
+  "appId": "com.edukenza.app",
+  "appName": "EDUkenZA",
+  "webDir": "dist",
+  "server": {
+    "url": "https://remixedukenza-h22c8g4v8-edu-ken-za.vercel.app",
+    "cleartext": true
+  }
+}

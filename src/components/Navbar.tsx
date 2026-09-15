@@ -49,7 +49,7 @@ export const Navbar: React.FC = () => {
   const isOwnerUser = isPlatformOwner(currentUser);
 
   return (
-    <header className="sticky top-0 z-50 bg-[#002147] text-white border-b-4 border-[#D4AF37] shadow-xl">
+    <header className="sticky top-0 z-50 bg-[#002147] text-white border-b-4 border-[#D4AF37] shadow-xl pt-[env(safe-area-inset-top,0px)]">
       {/* Platform Owner Draft Preview Alert Banner */}
       {isPreviewMode && isOwnerUser && (
         <div className="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-black uppercase tracking-wider flex items-center justify-between shadow-inner">
@@ -160,7 +160,8 @@ export const Navbar: React.FC = () => {
           <div className="flex lg:hidden items-center gap-2">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 text-slate-200 hover:text-white rounded bg-[#001733]"
+              className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-200 hover:text-white rounded-lg bg-[#001733] cursor-pointer"
+              aria-label="Toggle navigation menu"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -171,10 +172,10 @@ export const Navbar: React.FC = () => {
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div className="lg:hidden bg-[#001733] border-t border-[#D4AF37]/30 px-4 pt-3 pb-6 space-y-3">
+        <div className="lg:hidden bg-[#001733] border-t border-[#D4AF37]/30 px-4 pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] space-y-3">
           <button
             onClick={() => handleNavClick('home')}
-            className={`w-full text-left px-4 py-2.5 rounded text-xs font-bold uppercase tracking-wider ${
+            className={`w-full min-h-[44px] flex items-center text-left px-4 py-2.5 rounded text-xs font-bold uppercase tracking-wider cursor-pointer ${
               activeView === 'home' ? 'bg-[#D4AF37] text-[#002147]' : 'text-slate-200'
             }`}
           >
@@ -184,7 +185,7 @@ export const Navbar: React.FC = () => {
             <button
               key={link.id || link.view}
               onClick={() => handleNavClick(link.view)}
-              className={`w-full text-left px-4 py-2.5 rounded text-xs font-bold uppercase tracking-wider ${
+              className={`w-full min-h-[44px] flex items-center text-left px-4 py-2.5 rounded text-xs font-bold uppercase tracking-wider cursor-pointer ${
                 activeView === link.view ? 'bg-[#D4AF37] text-[#002147]' : 'text-slate-200'
               }`}
             >

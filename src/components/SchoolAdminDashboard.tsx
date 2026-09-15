@@ -219,6 +219,7 @@ export interface SchoolProfileData {
   email: string;
   address: string;
   country?: string;
+  academicYear?: string;
   academicTerm?: string;
 }
 

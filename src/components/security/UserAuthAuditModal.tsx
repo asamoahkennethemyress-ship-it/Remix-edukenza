@@ -180,7 +180,7 @@ export const UserAuthAuditModal: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-0.5">
-              Queries Firestore database <code className="text-amber-300 font-mono">{firebaseConfig.projectId}</code> collection <code className="text-amber-300 font-mono">users</code> to verify record existence and stored UID match.
+              Queries Firestore database <code className="text-amber-300 font-mono">{firebaseConfig.firestoreDatabaseId || firebaseConfig.projectId}</code> collection <code className="text-amber-300 font-mono">users</code> to verify record existence and stored UID match.
             </p>
           </div>
         </div>

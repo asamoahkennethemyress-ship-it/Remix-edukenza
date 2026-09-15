@@ -25,6 +25,7 @@ import { CbtMathRenderer } from './CbtMathRenderer';
 interface CbtQuestionBankViewProps {
   questions: CbtQuestion[];
   subjects: any[];
+  schoolId?: string;
   onOpenCreateQuestion: () => void;
   onEditQuestion: (q: CbtQuestion) => void;
   onOpenAiGenerator: () => void;
@@ -36,6 +37,7 @@ interface CbtQuestionBankViewProps {
 export const CbtQuestionBankView: React.FC<CbtQuestionBankViewProps> = ({
   questions,
   subjects,
+  schoolId = '',
   onOpenCreateQuestion,
   onEditQuestion,
   onOpenAiGenerator,
@@ -103,9 +105,14 @@ export const CbtQuestionBankView: React.FC<CbtQuestionBankViewProps> = ({
       if (file) {
         const reader = new FileReader();
         reader.onload = async (event) => {
+          const targetSchoolId = schoolId || questions[0]?.schoolId;
+          if (!targetSchoolId) {
+            showToast('School authorization required to import questions.', 'error');
+            return;
+          }
           try {
             const count = await CbtService.importQuestionsJSON(
-              questions[0]?.schoolId || 'school_01',
+              targetSchoolId,
               event.target?.result as string,
               currentUserId,
               currentUserName
