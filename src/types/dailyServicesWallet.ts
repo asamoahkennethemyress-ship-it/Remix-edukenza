@@ -15,7 +15,8 @@ export type DailyServiceCategory =
   | 'clubs'
   | 'sports'
   | 'shop'
-  | 'printing';
+  | 'printing'
+  | 'other';
 
 export interface DailyService {
   id: string;
@@ -26,6 +27,11 @@ export interface DailyService {
   dailyCost: number;
   weeklyCost?: number;
   monthlyCost?: number;
+  academicYear?: string;
+  term?: string;
+  startDate?: string;
+  endDate?: string;
+  walletEligible?: boolean;
   status: 'active' | 'suspended';
   activeDates?: string[];
   applicableClasses: string[]; // e.g. ['Basic 1', 'Basic 2', 'JHS 1', 'All']
@@ -50,6 +56,22 @@ export interface StudentServiceEnrollment {
   assignedDate: string;
   lastChargedDate?: string;
   expiryDate?: string;
+}
+
+export interface DailyServiceUsage {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  studentName: string;
+  className?: string;
+  serviceId: string;
+  serviceName: string;
+  category: DailyServiceCategory;
+  cost: number;
+  date: string;
+  transactionRef: string;
+  transactionId?: string;
+  status: 'completed' | 'refunded' | 'cancelled';
 }
 
 export interface StudentWallet {
@@ -102,12 +124,16 @@ export interface WalletTransaction {
   newBalance: number;
   description: string;
   category: string;
+  serviceId?: string;
+  serviceName?: string;
   paymentMethod: 'momo_mtn' | 'telecel_cash' | 'airteltigo' | 'card_visa_mc' | 'bank_transfer' | 'cash' | 'wallet_deduction';
   reference: string;
   date: string;
   processedBy: string;
   receiptUrl?: string;
-  status: 'successful' | 'pending' | 'failed';
+  refunded?: boolean;
+  refundTransactionId?: string;
+  status: 'successful' | 'pending' | 'failed' | 'reversed';
 }
 
 export interface CanteenMenuItem {

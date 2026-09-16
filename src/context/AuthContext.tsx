@@ -262,8 +262,10 @@ interface AuthContextType {
   registeredSchools: SchoolAccount[];
   login: (emailOrStudentId: string, password: string, rememberMe?: boolean, selectedRole?: string) => Promise<{ success: boolean; message?: string; isFirstLoginSetup?: boolean }>;
   loginWithStudentId: (studentId: string, password: string, rememberMe?: boolean) => Promise<{ success: boolean; message?: string }>;
-  loginStudentWithGoogle: (onProgress?: (status: string) => void) => Promise<{ success: boolean; message?: string }>;
-  loginWithGoogle: (onProgress?: (stage: 'signing_in' | 'loading_profile') => void) => Promise<{ success: boolean; message?: string }>;
+  loginStudentWithGoogle: (onProgress?: (status: string) => void, mode?: 'popup' | 'redirect') => Promise<{ success: boolean; message?: string; canUseRedirect?: boolean }>;
+  loginStudentWithGoogleRedirect: () => Promise<void>;
+  loginWithGoogle: (onProgress?: (stage: 'signing_in' | 'loading_profile') => void, mode?: 'popup' | 'redirect') => Promise<{ success: boolean; message?: string; canUseRedirect?: boolean }>;
+  loginWithGoogleRedirect: () => Promise<void>;
   loginWithBiometrics: () => Promise<{ success: boolean; message?: string }>;
   registerBiometricDevice: (displayName?: string) => Promise<{ success: boolean; credentialId?: string; message?: string }>;
   setupSchoolAdminPassword: (newPassword: string) => Promise<{ success: boolean; message?: string }>;
@@ -806,16 +808,110 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentUser]);
 
-  // Firebase Auth Observer (Strict user retrieval by UID)
+  // Firebase Auth Observer & Redirect Result Processor
   useEffect(() => {
-    // Check for incoming redirect sign-in result if returning from a mobile redirect
+    // Check for incoming redirect sign-in result if returning from Google Redirect
     getRedirectResult(auth, browserPopupRedirectResolver).then(async (redirectCredential) => {
       if (redirectCredential?.user) {
-        console.log('[AUTH REDIRECT] Successfully retrieved redirect credential for:', redirectCredential.user.email);
+        const user = redirectCredential.user;
+        const authUid = user.uid;
+        const cleanEmail = (user.email || '').toLowerCase().trim();
+        const displayName = user.displayName || '';
+        const photoUrl = user.photoURL || '';
+        console.log('[AUTH REDIRECT] Processing redirect credential for:', cleanEmail, 'UID:', authUid);
+
+        isAuthenticatingRef.current = true;
+        try {
+          const resolution = await resolveAndLinkUserProfile(authUid, cleanEmail, displayName, photoUrl);
+
+          if (!resolution.profile) {
+            stopProfileListener();
+            try { await firebaseSignOut(auth); } catch (e) {}
+            currentUserRef.current = null;
+            setCurrentUser(null);
+            localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+            setActiveViewRaw('login');
+            const unauthorizedMsg = resolution.error || 'Your Google account is authenticated, but it has not been authorized for EDUkenZA. Please contact your school administrator or platform administrator.';
+            showToast(unauthorizedMsg, 'error', 7000);
+            return;
+          }
+
+          const profile = resolution.profile;
+          const statusRaw = profile.status ? String(profile.status) : 'active';
+          const statusClean = statusRaw.toLowerCase().trim();
+          if (statusClean !== 'active' && profile.role !== 'platform_owner') {
+            stopProfileListener();
+            try { await firebaseSignOut(auth); } catch (e) {}
+            currentUserRef.current = null;
+            setCurrentUser(null);
+            localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+            setActiveViewRaw('login');
+            showToast('Your account is inactive. Please contact your school administrator.', 'error');
+            return;
+          }
+
+          const resolvedSchoolId = profile.schoolId || '';
+          if (isSchoolAdminRole(profile.role) && (!resolvedSchoolId || resolvedSchoolId.trim() === '')) {
+            stopProfileListener();
+            try { await firebaseSignOut(auth); } catch (e) {}
+            currentUserRef.current = null;
+            setCurrentUser(null);
+            localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+            setActiveViewRaw('login');
+            showToast('School Admin account is missing an assigned school. Access revoked.', 'error');
+            return;
+          }
+
+          const targetDashboardView = getDashboardViewForRole(profile.role, profile.educationCategory);
+          if (targetDashboardView === 'login') {
+            stopProfileListener();
+            try { await firebaseSignOut(auth); } catch (e) {}
+            currentUserRef.current = null;
+            setCurrentUser(null);
+            localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+            setActiveViewRaw('login');
+            showToast(`Your account role (${profile.role}) does not have an assigned dashboard.`, 'error');
+            return;
+          }
+
+          currentUserRef.current = profile;
+          localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(profile));
+          setCurrentUser(profile);
+          setActiveView(targetDashboardView);
+          startProfileListener(authUid);
+
+          logSecurityEvent({
+            eventType: 'LOGIN_SUCCESS',
+            action: 'GOOGLE_REDIRECT_SIGNIN_SUCCESS',
+            userId: authUid,
+            userEmail: cleanEmail,
+            userName: profile.fullName,
+            userRole: profile.role,
+            schoolId: resolvedSchoolId,
+            details: `User successfully logged into ${targetDashboardView} via Google Redirect`,
+            severity: 'low'
+          });
+
+          showToast(`Welcome back, ${profile.fullName}!`, 'success');
+        } catch (resErr: any) {
+          console.error('[AUTH REDIRECT RESOLUTION ERROR]', resErr);
+          showToast(`Google Sign-In failed: ${resErr?.message || 'Unknown error'}`, 'error');
+        } finally {
+          isAuthenticatingRef.current = false;
+        }
       }
     }).catch((redirectErr: any) => {
       if (redirectErr?.code && redirectErr.code !== 'auth/credential-already-in-use') {
         console.warn('[AUTH REDIRECT NOTICE]', redirectErr.code, redirectErr.message);
+        let msg = 'Google redirect sign-in failed.';
+        if (redirectErr.code === 'auth/unauthorized-domain') {
+          msg = 'This domain is not authorized in Firebase Authentication (auth/unauthorized-domain).';
+        } else if (redirectErr.code === 'auth/operation-not-allowed') {
+          msg = 'Google provider is not enabled in Firebase Authentication.';
+        } else if (redirectErr.message) {
+          msg = `Google redirect error: ${redirectErr.message}`;
+        }
+        showToast(msg, 'error', 6000);
       }
     });
 
@@ -1220,9 +1316,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * 7. Loading state ("Loading your Student Portal…")
    * 8. Establish session, route to student-dashboard, attach realtime profile listener
    */
+  const loginStudentWithGoogleRedirect = async (): Promise<void> => {
+    isAuthenticatingRef.current = true;
+    try {
+      const provider = createGoogleProvider();
+      await signInWithRedirect(auth, provider, browserPopupRedirectResolver);
+    } catch (err: any) {
+      isAuthenticatingRef.current = false;
+      console.error('[STUDENT GOOGLE REDIRECT ERROR]', err);
+      showToast(err?.message || 'Failed to initialize Google redirect.', 'error');
+    }
+  };
+
   const loginStudentWithGoogle = async (
-    onProgress?: (status: string) => void
-  ): Promise<{ success: boolean; message?: string }> => {
+    onProgress?: (status: string) => void,
+    mode: 'popup' | 'redirect' = 'popup'
+  ): Promise<{ success: boolean; message?: string; canUseRedirect?: boolean }> => {
+    if (mode === 'redirect') {
+      await loginStudentWithGoogleRedirect();
+      return { success: false, message: 'Redirecting to Google Sign-In…', canUseRedirect: true };
+    }
+
     if (isAuthenticatingRef.current) {
       const msg = 'Authentication is already in progress. Please wait.';
       return { success: false, message: msg };
@@ -1242,7 +1356,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticatingRef.current = false;
         const parsed = parseStudentAuthError(authErr);
         showToast(parsed.message, 'error');
-        return { success: false, message: parsed.message };
+        return { success: false, message: parsed.message, canUseRedirect: true };
       }
 
       const user = userCredential?.user;
@@ -1507,6 +1621,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: false, message: msg };
   };
 
+  const loginWithGoogleRedirect = async (): Promise<void> => {
+    isAuthenticatingRef.current = true;
+    try {
+      const provider = createGoogleProvider();
+      await signInWithRedirect(auth, provider, browserPopupRedirectResolver);
+    } catch (err: any) {
+      isAuthenticatingRef.current = false;
+      console.error('[GOOGLE REDIRECT ERROR]', err);
+      let errMsg = 'Failed to initiate Google sign-in redirect.';
+      if (err?.code === 'auth/unauthorized-domain') {
+        errMsg = 'This domain is not authorized in Firebase Authentication (auth/unauthorized-domain).';
+      } else if (err?.code === 'auth/operation-not-allowed') {
+        errMsg = 'Google Sign-In is not enabled for this project (auth/operation-not-allowed).';
+      } else if (err?.message) {
+        errMsg = `Google Redirect failed: ${err.message}`;
+      }
+      showToast(errMsg, 'error');
+    }
+  };
+
   /**
    * Google Sign-In with Firebase Auth
    * Authenticates user using Google OAuth popup and enforces strict Firestore authorization.
@@ -1514,13 +1648,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * Auto-links pre-registered users (students, teachers, school admins, parents, owners).
    */
   const loginWithGoogle = async (
-    onProgress?: (stage: 'signing_in' | 'loading_profile') => void
-  ): Promise<{ success: boolean; message?: string }> => {
+    onProgress?: (stage: 'signing_in' | 'loading_profile') => void,
+    mode: 'popup' | 'redirect' = 'popup'
+  ): Promise<{ success: boolean; message?: string; canUseRedirect?: boolean }> => {
+    if (mode === 'redirect') {
+      await loginWithGoogleRedirect();
+      return { success: false, message: 'Redirecting to Google Sign-In…', canUseRedirect: true };
+    }
+
     isAuthenticatingRef.current = true;
     onProgress?.('signing_in');
     let authUid: string | null = null;
     let cleanEmail: string = '';
     let displayName: string = '';
+    const popupStartTime = Date.now();
 
     try {
       // Step 1: Execute Google OAuth via Firebase Authentication
@@ -1529,7 +1670,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const user = userCredential.user;
       if (!user) {
         isAuthenticatingRef.current = false;
-        return { success: false, message: 'Google authentication was cancelled or produced no user.' };
+        return { success: false, message: 'Google authentication was cancelled or produced no user.', canUseRedirect: true };
       }
 
       onProgress?.('loading_profile');
@@ -1554,7 +1695,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const unauthorizedMsg = resolution.error || 'Your Google account is authenticated, but it has not been authorized for EDUkenZA. Please contact your school administrator or platform administrator.';
         showToast(unauthorizedMsg, 'error', 7000);
         isAuthenticatingRef.current = false;
-        return { success: false, message: unauthorizedMsg };
+        return { success: false, message: unauthorizedMsg, canUseRedirect: false };
       }
 
       const profile = resolution.profile;
@@ -1577,7 +1718,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (statusClean === 'disabled') statusMsg = 'Your account has been disabled. Please contact your school administrator.';
         if (statusClean === 'pending') statusMsg = 'Your account is pending approval by your school administrator.';
         showToast(statusMsg, 'error');
-        return { success: false, message: statusMsg };
+        return { success: false, message: statusMsg, canUseRedirect: false };
       }
 
       // School Isolation (never default, strictly use exact schoolId from Firestore)
@@ -1594,7 +1735,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticatingRef.current = false;
         const schoolErrMsg = 'School Admin account is missing an assigned school. Access revoked.';
         showToast(schoolErrMsg, 'error');
-        return { success: false, message: schoolErrMsg };
+        return { success: false, message: schoolErrMsg, canUseRedirect: false };
       }
 
       // Determine correct Google Routing based on authoritative Firestore role
@@ -1611,7 +1752,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticatingRef.current = false;
         const invalidRoleMsg = `Your account role (${profile.role}) does not have an assigned dashboard. Please contact support.`;
         showToast(invalidRoleMsg, 'error');
-        return { success: false, message: invalidRoleMsg };
+        return { success: false, message: invalidRoleMsg, canUseRedirect: false };
       }
 
       currentUserRef.current = profile;
@@ -1639,33 +1780,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true };
     } catch (error: any) {
       isAuthenticatingRef.current = false;
-      if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
-        console.info('[GOOGLE LOGIN] Sign-in popup closed or cancelled by user.');
-        showToast('Google sign-in popup was closed.', 'info');
-        return { success: false, message: 'Google sign-in popup was closed.' };
+      const elapsed = Date.now() - popupStartTime;
+      const code = error?.code || '';
+
+      console.warn(`[GOOGLE LOGIN ERROR] code="${code}", elapsed=${elapsed}ms:`, error);
+
+      if (code === 'auth/unauthorized-domain') {
+        const domainMsg = 'This domain is not authorized in Firebase Authentication (auth/unauthorized-domain). Please check your Firebase authorized domains.';
+        showToast(domainMsg, 'error', 8000);
+        return { success: false, message: domainMsg, canUseRedirect: false };
       }
-      if (error?.code === 'auth/popup-blocked') {
-        const popupMsg = 'Google sign-in popup was blocked by your browser. Please allow popups for this site and try again.';
-        showToast(popupMsg, 'error');
-        return { success: false, message: popupMsg };
+
+      if (code === 'auth/operation-not-allowed') {
+        const opMsg = 'Google Sign-In is not enabled for this project (auth/operation-not-allowed).';
+        showToast(opMsg, 'error', 8000);
+        return { success: false, message: opMsg, canUseRedirect: false };
       }
-      if (error?.code === 'auth/network-request-failed') {
-        const netMsg = 'Network connection failure. Please check your internet connection.';
+
+      if (code === 'auth/network-request-failed') {
+        const netMsg = 'Network connection failure. Please check your internet connection and try again.';
         showToast(netMsg, 'error');
-        return { success: false, message: netMsg };
+        return { success: false, message: netMsg, canUseRedirect: true };
+      }
+
+      if (code === 'auth/popup-blocked') {
+        const popupMsg = 'Google sign-in popup was blocked by your browser (auth/popup-blocked). Please allow popups or use Google Redirect below.';
+        showToast(popupMsg, 'error', 6000);
+        return { success: false, message: popupMsg, canUseRedirect: true };
+      }
+
+      if (code === 'auth/cancelled-popup-request') {
+        const cancelMsg = 'Previous sign-in popup was cancelled. You can try again or use Google Redirect below.';
+        showToast(cancelMsg, 'info', 5000);
+        return { success: false, message: cancelMsg, canUseRedirect: true };
+      }
+
+      if (code === 'auth/popup-closed-by-user') {
+        if (elapsed < 2500) {
+          const fastMsg = 'Google sign-in popup closed immediately. In production or private browsing, browser cookie policies may close cross-origin popups. Use Google Redirect below to sign in reliably.';
+          showToast(fastMsg, 'info', 6000);
+          return { success: false, message: fastMsg, canUseRedirect: true };
+        } else {
+          const closedMsg = 'Google sign-in popup was closed. If this happened unexpectedly, continue with Google Redirect below.';
+          showToast(closedMsg, 'info', 5000);
+          return { success: false, message: closedMsg, canUseRedirect: true };
+        }
       }
 
       console.error('[GOOGLE LOGIN EXCEPTION]', error);
       let friendlyMsg = 'Google authentication succeeded, but EDUkenZA could not read your authorization profile.';
       if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
         friendlyMsg = 'Google authentication succeeded, but EDUkenZA could not read your authorization profile (Firestore error: permission-denied).';
-      } else if (error?.code === 'auth/operation-not-allowed') {
-        friendlyMsg = 'Google Sign-In is not enabled in this Firebase project.';
       } else if (error?.message) {
         friendlyMsg = `Google Sign-In failed: ${error.message}`;
       }
       showToast(friendlyMsg, 'error');
-      return { success: false, message: friendlyMsg };
+      return { success: false, message: friendlyMsg, canUseRedirect: true };
     } finally {
       isAuthenticatingRef.current = false;
     }
@@ -2330,7 +2500,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         loginWithStudentId,
         loginStudentWithGoogle,
+        loginStudentWithGoogleRedirect,
         loginWithGoogle,
+        loginWithGoogleRedirect,
         loginWithBiometrics,
         registerBiometricDevice,
         setupSchoolAdminPassword,

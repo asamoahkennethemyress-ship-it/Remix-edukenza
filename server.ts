@@ -163,7 +163,7 @@ function getGenAI() {
   });
 }
 
-// Resilient model cascade: High-reliability gemini-3.6-flash, fast gemini-3.1-flash-lite, advanced gemini-3.8-flash
+// Resilient model cascade: High-performance gemini-3.6-flash, ultra-fast gemini-3.1-flash-lite, advanced gemini-3.8-flash, resilient gemini-flash-latest
 const PRIMARY_TEXT_MODELS = ["gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
 
 async function generateGeminiContentWithFallback(ai: any, requestPayload: {
@@ -196,13 +196,44 @@ async function generateGeminiContentWithFallback(ai: any, requestPayload: {
         err?.message?.includes("429") ||
         err?.message?.includes("RESOURCE_EXHAUSTED")
       ) {
-        await new Promise(res => setTimeout(res, 400));
+        await new Promise(res => setTimeout(res, 300));
       }
     }
   }
 
   throw lastError || new Error("All Gemini models in cascade were unavailable. Please retry in a moment.");
 }
+
+// -------------------------------------------------------------
+// REAL-TIME GEMINI API STATUS & HEALTH CHECK ENDPOINT
+// -------------------------------------------------------------
+app.get("/api/ai/status", async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const ai = getGenAI();
+    const result = await generateGeminiContentWithFallback(ai, {
+      contents: "Respond with the single word: operational",
+    });
+    const latencyMs = Date.now() - startTime;
+    res.json({
+      status: "online",
+      working: true,
+      model: result.modelUsed,
+      latencyMs,
+      sampleResponse: result.text.trim(),
+      timestamp: new Date().toISOString()
+    });
+  } catch (err: any) {
+    console.warn("[GEMINI STATUS CHECK] Notice:", err?.message);
+    const parsed = parseGenAIError(err);
+    res.status(parsed.status).json({
+      status: "error",
+      working: false,
+      error: parsed.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
 async function generateGeminiStreamWithFallback(ai: any, requestPayload: {
   contents: any;
@@ -1700,6 +1731,529 @@ app.post("/api/payments/paystack/webhook", async (req, res) => {
   } catch (err: any) {
     console.error("[PAYSTACK WEBHOOK ERROR]", err);
     return res.status(500).send("Webhook processing error.");
+  }
+});
+
+// =============================================================
+// 10. SERVER-AUTHORITATIVE STUDENT WALLET & DAILY SERVICES API
+// =============================================================
+
+/**
+ * Endpoint: POST /api/wallet/topup
+ * Strictly verifies amount, prevents duplicate refs, updates wallet atomically,
+ * logs immutable transaction, and writes audit record.
+ */
+app.post("/api/wallet/topup", async (req, res) => {
+  const { schoolId, studentId, studentName, amount, paymentMethod, reference, processedBy } = req.body;
+
+  if (!schoolId || !studentId) {
+    return res.status(400).json({ success: false, error: "MISSING_FIELDS", message: "schoolId and studentId are required" });
+  }
+
+  const numericAmount = Number(amount);
+  if (isNaN(numericAmount) || numericAmount <= 0 || numericAmount > 50000) {
+    return res.status(400).json({ success: false, error: "INVALID_AMOUNT", message: "Amount must be a positive number up to GHS 50,000" });
+  }
+
+  const validMethods = ["momo_mtn", "telecel_cash", "airteltigo", "card_visa_mc", "bank_transfer", "cash", "paystack"];
+  const finalMethod = validMethods.includes(paymentMethod) ? paymentMethod : "cash";
+  const finalRef = reference || `TOP-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+  const now = new Date().toISOString();
+
+  try {
+    const db = getServerFirestore();
+    const result = await runTransaction(db, async (txn) => {
+      // 1. Check duplicate reference
+      const txnQuery = query(collection(db, "walletTransactions"), where("reference", "==", finalRef));
+      const dupSnap = await getDocs(txnQuery);
+      if (!dupSnap.empty) {
+        throw new Error(`DUPLICATE_REFERENCE: Transaction reference ${finalRef} has already been processed.`);
+      }
+
+      // 2. Find or create student wallet
+      const walletsCol = collection(db, "studentWallets");
+      const wQuery = query(walletsCol, where("schoolId", "==", schoolId), where("studentId", "==", studentId));
+      const wSnap = await getDocs(wQuery);
+
+      let walletRef: any;
+      let prevBalance = 0;
+      let walletData: any = {};
+
+      if (!wSnap.empty) {
+        const wDoc = wSnap.docs[0];
+        walletRef = doc(db, "studentWallets", wDoc.id);
+        walletData = wDoc.data();
+        if (walletData.schoolId !== schoolId) {
+          throw new Error("CROSS_TENANT_VIOLATION: School ID mismatch.");
+        }
+        prevBalance = Number(walletData.balance) || 0;
+      } else {
+        walletRef = doc(walletsCol);
+        walletData = {
+          schoolId,
+          studentId,
+          studentName: studentName || "Student",
+          className: "",
+          walletId: `WAL-EDUK-${Math.floor(10000 + Math.random() * 90000)}`,
+          qrCodeData: `EDUK-CARD-${studentId}`,
+          nfcCardId: `NFC-${Math.floor(1000 + Math.random() * 9000)}`,
+          balance: 0,
+          currency: "GHS",
+          dailyLimit: 50,
+          dailySpent: 0,
+          weeklyLimit: 250,
+          weeklySpent: 0,
+          monthlyLimit: 1000,
+          monthlySpent: 0,
+          autoTopUpEnabled: false,
+          autoTopUpThreshold: 15,
+          autoTopUpAmount: 50,
+          disabledCategories: [],
+          status: "active",
+          createdAt: now
+        };
+        prevBalance = 0;
+      }
+
+      const newBalance = Number((prevBalance + numericAmount).toFixed(2));
+
+      // Update wallet balance
+      txn.set(walletRef, {
+        ...walletData,
+        balance: newBalance,
+        lastUpdated: now
+      }, { merge: true });
+
+      // Create immutable transaction ledger record
+      const txnDocRef = doc(collection(db, "walletTransactions"));
+      const txnRecord = {
+        id: txnDocRef.id,
+        walletId: walletData.walletId || `WAL-EDUK-${studentId}`,
+        studentId,
+        studentName: studentName || walletData.studentName || "Student",
+        schoolId,
+        type: "topup",
+        amount: numericAmount,
+        previousBalance: prevBalance,
+        newBalance,
+        description: `Wallet Top-Up via ${finalMethod.toUpperCase()}`,
+        category: "Top Up",
+        paymentMethod: finalMethod,
+        reference: finalRef,
+        date: now,
+        processedBy: processedBy || "Authoritative Gateway",
+        status: "successful"
+      };
+      txn.set(txnDocRef, txnRecord);
+
+      // Create Audit Log
+      const auditDocRef = doc(collection(db, "auditLogs"));
+      txn.set(auditDocRef, {
+        logId: auditDocRef.id,
+        action: "WALLET_TOPUP",
+        schoolId,
+        actorId: processedBy || "system",
+        details: `Credited GHS ${numericAmount.toFixed(2)} to student ${studentId}. Previous: GHS ${prevBalance.toFixed(2)}, New: GHS ${newBalance.toFixed(2)}. Ref: ${finalRef}`,
+        timestamp: now
+      });
+
+      return { newBalance, transactionId: txnDocRef.id, reference: finalRef };
+    });
+
+    return res.json({
+      success: true,
+      newBalance: result.newBalance,
+      transactionId: result.transactionId,
+      reference: result.reference,
+      message: `Wallet successfully credited with GHS ${numericAmount.toFixed(2)}`
+    });
+  } catch (err: any) {
+    console.error("[WALLET TOPUP ERROR]", err);
+    return res.status(400).json({
+      success: false,
+      error: "TOPUP_FAILED",
+      message: err?.message || "Failed to process wallet top-up"
+    });
+  }
+});
+
+/**
+ * Endpoint: POST /api/wallet/purchase
+ * Strictly verifies daily service status, student schoolId, spending limits,
+ * and ensures balance is strictly sufficient before deducting.
+ * NEVER allows negative balance.
+ */
+app.post("/api/wallet/purchase", async (req, res) => {
+  const { schoolId, studentId, serviceId, processedBy } = req.body;
+
+  if (!schoolId || !studentId || !serviceId) {
+    return res.status(400).json({ success: false, error: "MISSING_FIELDS", message: "schoolId, studentId, and serviceId are required" });
+  }
+
+  const now = new Date().toISOString();
+
+  try {
+    const db = getServerFirestore();
+    const result = await runTransaction(db, async (txn) => {
+      // 1. Fetch Service
+      const serviceRef = doc(db, "dailyServices", serviceId);
+      const serviceSnap = await txn.get(serviceRef);
+      if (!serviceSnap.exists()) {
+        throw new Error("SERVICE_NOT_FOUND: The requested daily service does not exist.");
+      }
+
+      const serviceData = serviceSnap.data();
+      if (serviceData.schoolId !== schoolId) {
+        throw new Error("CROSS_TENANT_VIOLATION: Service does not belong to student's school.");
+      }
+
+      if (serviceData.status !== "active") {
+        throw new Error(`SERVICE_INACTIVE: Service '${serviceData.name}' is currently suspended.`);
+      }
+
+      if (serviceData.walletEligible === false) {
+        throw new Error(`SERVICE_NOT_WALLET_ELIGIBLE: Service '${serviceData.name}' cannot be paid with digital wallet.`);
+      }
+
+      const cost = Number(serviceData.dailyCost || serviceData.price || 0);
+      if (cost <= 0) {
+        throw new Error("INVALID_SERVICE_COST: Service price is not configured properly.");
+      }
+
+      // 2. Fetch Wallet
+      const walletsCol = collection(db, "studentWallets");
+      const wQuery = query(walletsCol, where("schoolId", "==", schoolId), where("studentId", "==", studentId));
+      const wSnap = await getDocs(wQuery);
+
+      if (wSnap.empty) {
+        throw new Error("WALLET_NOT_FOUND: No digital wallet found for this student.");
+      }
+
+      const wDoc = wSnap.docs[0];
+      const walletRef = doc(db, "studentWallets", wDoc.id);
+      const walletData = wDoc.data();
+
+      if (walletData.status === "frozen") {
+        throw new Error("WALLET_FROZEN: This student wallet is currently frozen by school or parent.");
+      }
+
+      // Check category restrictions
+      if (walletData.disabledCategories && Array.isArray(walletData.disabledCategories)) {
+        if (walletData.disabledCategories.includes(serviceData.category)) {
+          throw new Error(`CATEGORY_RESTRICTED: Spending in category '${serviceData.category}' is blocked for this student.`);
+        }
+      }
+
+      // Check daily spending limit
+      const currentDailySpent = Number(walletData.dailySpent) || 0;
+      const dailyLimit = Number(walletData.dailyLimit) || 999999;
+      if (dailyLimit > 0 && (currentDailySpent + cost) > dailyLimit) {
+        throw new Error(`DAILY_LIMIT_EXCEEDED: Transaction exceeds daily spending limit of GHS ${dailyLimit.toFixed(2)}.`);
+      }
+
+      // STRICT BALANCE VERIFICATION
+      const currentBal = Number(walletData.balance) || 0;
+      if (currentBal < cost) {
+        throw new Error(`INSUFFICIENT_BALANCE: Wallet balance (GHS ${currentBal.toFixed(2)}) is insufficient for this service (GHS ${cost.toFixed(2)}). Short by GHS ${(cost - currentBal).toFixed(2)}.`);
+      }
+
+      const previousBalance = currentBal;
+      const newBalance = Number((previousBalance - cost).toFixed(2));
+      const newDailySpent = Number((currentDailySpent + cost).toFixed(2));
+
+      // 3. Atomically Deduct Balance
+      txn.update(walletRef, {
+        balance: newBalance,
+        dailySpent: newDailySpent,
+        lastUpdated: now
+      });
+
+      // 4. Create Immutable Transaction Record
+      const txnRef = doc(collection(db, "walletTransactions"));
+      const reference = `SRV-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+      const txnRecord = {
+        id: txnRef.id,
+        walletId: walletData.walletId || `WAL-EDUK-${studentId}`,
+        studentId,
+        studentName: walletData.studentName || "Student",
+        schoolId,
+        type: "daily_service_charge",
+        amount: cost,
+        previousBalance,
+        newBalance,
+        description: `Daily Service Payment: ${serviceData.name}`,
+        category: serviceData.category || "Campus Services",
+        serviceId,
+        serviceName: serviceData.name,
+        paymentMethod: "wallet_deduction",
+        reference,
+        date: now,
+        processedBy: processedBy || "Student Wallet Service Terminal",
+        status: "successful"
+      };
+      txn.set(txnRef, txnRecord);
+
+      // 5. Record Daily Service Usage Log
+      const usageRef = doc(collection(db, "dailyServiceUsage"));
+      txn.set(usageRef, {
+        id: usageRef.id,
+        schoolId,
+        studentId,
+        studentName: walletData.studentName || "Student",
+        className: walletData.className || "",
+        serviceId,
+        serviceName: serviceData.name,
+        category: serviceData.category,
+        cost,
+        date: now,
+        transactionRef: reference,
+        transactionId: txnRef.id,
+        status: "completed"
+      });
+
+      // 6. Audit Log
+      const auditRef = doc(collection(db, "auditLogs"));
+      txn.set(auditRef, {
+        logId: auditRef.id,
+        action: "SERVICE_WALLET_DEDUCTION",
+        schoolId,
+        actorId: studentId,
+        details: `Deducted GHS ${cost.toFixed(2)} for ${serviceData.name}. Previous: GHS ${previousBalance.toFixed(2)}, New: GHS ${newBalance.toFixed(2)}. Ref: ${reference}`,
+        timestamp: now
+      });
+
+      return {
+        newBalance,
+        previousBalance,
+        amount: cost,
+        serviceName: serviceData.name,
+        reference,
+        transactionId: txnRef.id
+      };
+    });
+
+    return res.json({
+      success: true,
+      ...result,
+      message: `Service '${result.serviceName}' purchased successfully!`
+    });
+  } catch (err: any) {
+    console.error("[WALLET PURCHASE ERROR]", err);
+    return res.status(400).json({
+      success: false,
+      error: "PURCHASE_FAILED",
+      message: err?.message || "Failed to process service purchase"
+    });
+  }
+});
+
+/**
+ * Endpoint: POST /api/wallet/refund
+ * Authoritative admin refund or balance adjustment. Reverses an earlier deduction.
+ */
+app.post("/api/wallet/refund", async (req, res) => {
+  const { schoolId, transactionId, reason, authorizedBy } = req.body;
+
+  if (!schoolId || !transactionId || !reason || !authorizedBy) {
+    return res.status(400).json({ success: false, error: "MISSING_FIELDS", message: "schoolId, transactionId, reason, and authorizedBy are required" });
+  }
+
+  const now = new Date().toISOString();
+
+  try {
+    const db = getServerFirestore();
+    const result = await runTransaction(db, async (txn) => {
+      const origTxnRef = doc(db, "walletTransactions", transactionId);
+      const origSnap = await txn.get(origTxnRef);
+      if (!origSnap.exists()) {
+        throw new Error("TRANSACTION_NOT_FOUND: Original transaction does not exist.");
+      }
+
+      const origData = origSnap.data();
+      if (origData.schoolId !== schoolId) {
+        throw new Error("CROSS_TENANT_VIOLATION: Transaction does not belong to school.");
+      }
+
+      if (origData.refunded) {
+        throw new Error("ALREADY_REFUNDED: This transaction has already been refunded.");
+      }
+
+      if (origData.type === "topup" || origData.type === "refund") {
+        throw new Error("INVALID_REFUND_TARGET: Only debit and service charges can be refunded.");
+      }
+
+      const refundAmount = Number(origData.amount);
+      if (refundAmount <= 0) {
+        throw new Error("INVALID_REFUND_AMOUNT: Original transaction amount is zero or negative.");
+      }
+
+      // Fetch student wallet
+      const walletsCol = collection(db, "studentWallets");
+      const wQuery = query(walletsCol, where("schoolId", "==", schoolId), where("studentId", "==", origData.studentId));
+      const wSnap = await getDocs(wQuery);
+
+      if (wSnap.empty) {
+        throw new Error("WALLET_NOT_FOUND: Student wallet could not be found for refund.");
+      }
+
+      const wDoc = wSnap.docs[0];
+      const walletRef = doc(db, "studentWallets", wDoc.id);
+      const walletData = wDoc.data();
+
+      const prevBal = Number(walletData.balance) || 0;
+      const newBal = Number((prevBal + refundAmount).toFixed(2));
+
+      // Mark original transaction as refunded
+      const refundRefCode = `REF-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+      txn.update(origTxnRef, {
+        refunded: true,
+        refundTransactionRef: refundRefCode,
+        refundedAt: now
+      });
+
+      // Restore wallet balance
+      txn.update(walletRef, {
+        balance: newBal,
+        lastUpdated: now
+      });
+
+      // Create new refund transaction record
+      const refundTxnRef = doc(collection(db, "walletTransactions"));
+      txn.set(refundTxnRef, {
+        id: refundTxnRef.id,
+        walletId: walletData.walletId,
+        studentId: origData.studentId,
+        studentName: origData.studentName,
+        schoolId,
+        type: "refund",
+        amount: refundAmount,
+        previousBalance: prevBal,
+        newBalance: newBal,
+        description: `Authorized Refund: ${reason} (Original Ref: ${origData.reference})`,
+        category: "Refund",
+        serviceId: origData.serviceId || "",
+        serviceName: origData.serviceName || "",
+        paymentMethod: "wallet_deduction",
+        reference: refundRefCode,
+        date: now,
+        processedBy: authorizedBy,
+        status: "successful"
+      });
+
+      // Audit Log
+      const auditRef = doc(collection(db, "auditLogs"));
+      txn.set(auditRef, {
+        logId: auditRef.id,
+        action: "WALLET_REFUND_AUTHORIZED",
+        schoolId,
+        actorId: authorizedBy,
+        details: `Issued refund of GHS ${refundAmount.toFixed(2)} to ${origData.studentName} for transaction ${origData.reference}. Reason: ${reason}. New Balance: GHS ${newBal.toFixed(2)}`,
+        timestamp: now
+      });
+
+      return { newBalance: newBal, refundAmount, reference: refundRefCode };
+    });
+
+    return res.json({
+      success: true,
+      newBalance: result.newBalance,
+      refundAmount: result.refundAmount,
+      reference: result.reference,
+      message: `Refund of GHS ${result.refundAmount.toFixed(2)} processed successfully.`
+    });
+  } catch (err: any) {
+    console.error("[WALLET REFUND ERROR]", err);
+    return res.status(400).json({
+      success: false,
+      error: "REFUND_FAILED",
+      message: err?.message || "Failed to process refund."
+    });
+  }
+});
+
+/**
+ * Endpoint: GET /api/wallet/stats
+ * Real-time school aggregated metrics: Total Balances, Total Funded, Total Spent, Service Revenue.
+ */
+app.get("/api/wallet/stats", async (req, res) => {
+  const schoolId = String(req.query.schoolId || "").trim();
+  if (!schoolId) {
+    return res.status(400).json({ success: false, error: "Missing schoolId query parameter" });
+  }
+
+  try {
+    const db = getServerFirestore();
+
+    // Query wallets
+    const walletsSnap = await getDocs(query(collection(db, "studentWallets"), where("schoolId", "==", schoolId)));
+    let totalWallets = 0;
+    let totalStoredBalance = 0;
+
+    walletsSnap.forEach((d) => {
+      totalWallets += 1;
+      totalStoredBalance += Number(d.data().balance || 0);
+    });
+
+    // Query transactions
+    const txnsSnap = await getDocs(query(collection(db, "walletTransactions"), where("schoolId", "==", schoolId)));
+    let totalFunded = 0;
+    let totalSpent = 0;
+    let todaySpent = 0;
+    let todayFunded = 0;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const categoryRevenue: Record<string, number> = {};
+
+    txnsSnap.forEach((d) => {
+      const data = d.data();
+      const amt = Number(data.amount) || 0;
+      const isToday = data.date && String(data.date).startsWith(todayStr);
+
+      if (data.type === "topup" && data.status === "successful") {
+        totalFunded += amt;
+        if (isToday) todayFunded += amt;
+      } else if (data.status === "successful" && data.type !== "refund") {
+        totalSpent += amt;
+        if (isToday) todaySpent += amt;
+        const cat = data.category || "General";
+        categoryRevenue[cat] = (categoryRevenue[cat] || 0) + amt;
+      }
+    });
+
+    // Query active services
+    const servicesSnap = await getDocs(query(collection(db, "dailyServices"), where("schoolId", "==", schoolId)));
+    let activeServicesCount = 0;
+    servicesSnap.forEach((d) => {
+      if (d.data().status === "active") activeServicesCount += 1;
+    });
+
+    // Query daily service usages
+    const usagesSnap = await getDocs(query(collection(db, "dailyServiceUsage"), where("schoolId", "==", schoolId)));
+    let todayUsageCount = 0;
+    usagesSnap.forEach((d) => {
+      const data = d.data();
+      if (data.date && String(data.date).startsWith(todayStr)) {
+        todayUsageCount += 1;
+      }
+    });
+
+    return res.json({
+      success: true,
+      schoolId,
+      totalWallets,
+      totalStoredBalance: Number(totalStoredBalance.toFixed(2)),
+      totalFunded: Number(totalFunded.toFixed(2)),
+      totalSpent: Number(totalSpent.toFixed(2)),
+      todayFunded: Number(todayFunded.toFixed(2)),
+      todaySpent: Number(todaySpent.toFixed(2)),
+      activeServicesCount,
+      todayUsageCount,
+      totalUsageCount: usagesSnap.size,
+      categoryRevenue,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err: any) {
+    console.error("[WALLET STATS ERROR]", err);
+    return res.status(500).json({ success: false, error: err?.message || "Failed to calculate wallet metrics" });
   }
 });
 

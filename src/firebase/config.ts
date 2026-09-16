@@ -48,12 +48,12 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 // This prevents auth/argument-error when executing signInWithPopup in the browser
 let authInstance: any;
 try {
-  authInstance = getAuth(app);
-} catch {
   authInstance = initializeAuth(app, {
     persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
     popupRedirectResolver: browserPopupRedirectResolver,
   });
+} catch {
+  authInstance = getAuth(app);
 }
 
 // Ensure popupRedirectResolver is guaranteed on the auth instance

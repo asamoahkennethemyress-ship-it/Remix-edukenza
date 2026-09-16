@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, ArrowRight } from 'lucide-react';
 import { BrandLogo } from './brand/BrandLogo';
 
 export const LoginPage: React.FC = () => {
-  const { loginWithGoogle, setActiveView } = useAuth();
+  const { loginWithGoogle, loginWithGoogleRedirect, setActiveView } = useAuth();
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string>('Signing you in…');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showRedirectOption, setShowRedirectOption] = useState<boolean>(false);
 
   const handleGoogleSignIn = async () => {
     setErrorMessage(null);
+    setShowRedirectOption(false);
     setLoading(true);
     setLoadingMessage('Signing you in…');
 
@@ -25,10 +27,26 @@ export const LoginPage: React.FC = () => {
 
       if (!result.success && result.message) {
         setErrorMessage(result.message);
+        if (result.canUseRedirect) {
+          setShowRedirectOption(true);
+        }
       }
     } catch (err: any) {
       setErrorMessage(err?.message || 'An unexpected error occurred during Google sign-in.');
+      setShowRedirectOption(true);
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleRedirectSignIn = async () => {
+    setErrorMessage(null);
+    setLoading(true);
+    setLoadingMessage('Redirecting to Google…');
+    try {
+      await loginWithGoogleRedirect();
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to redirect to Google.');
       setLoading(false);
     }
   };
@@ -59,19 +77,34 @@ export const LoginPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Clear Authentication Failure Message (Only when authentication genuinely fails) */}
+        {/* Clear Authentication Failure Message */}
         {errorMessage && (
           <div 
             id="auth-error-banner"
-            className="p-3.5 bg-red-50/90 border border-red-200 rounded-xl flex items-start gap-2.5 text-red-800 text-xs text-left animate-in fade-in duration-200"
+            className="p-3.5 bg-red-50/90 border border-red-200 rounded-xl space-y-2 text-red-800 text-xs text-left animate-in fade-in duration-200"
           >
-            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-            <p className="font-medium leading-relaxed">{errorMessage}</p>
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <p className="font-medium leading-relaxed">{errorMessage}</p>
+            </div>
+            {showRedirectOption && (
+              <div className="pt-2 border-t border-red-200/60 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleGoogleRedirectSignIn}
+                  disabled={loading}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#002147] hover:underline cursor-pointer"
+                >
+                  <span>Continue with Google (Redirect Mode)</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         )}
 
         {/* [ Continue with Google ] Button */}
-        <div>
+        <div className="space-y-3">
           <button
             id="google-signin-btn"
             type="button"
@@ -109,6 +142,17 @@ export const LoginPage: React.FC = () => {
                 </span>
               </>
             )}
+          </button>
+
+          {/* Fallback Redirect Option for strict browser environments */}
+          <button
+            id="google-redirect-btn"
+            type="button"
+            onClick={handleGoogleRedirectSignIn}
+            disabled={loading}
+            className="w-full text-xs text-slate-500 hover:text-[#002147] transition py-1 text-center cursor-pointer font-medium"
+          >
+            Trouble with popups? Continue with Google (Redirect)
           </button>
         </div>
 

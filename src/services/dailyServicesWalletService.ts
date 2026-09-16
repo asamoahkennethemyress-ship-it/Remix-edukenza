@@ -20,6 +20,7 @@ import { enqueueWalletTransaction } from './offlineSyncService';
 import {
   DailyService,
   StudentServiceEnrollment,
+  DailyServiceUsage,
   StudentWallet,
   WalletTransaction,
   WalletTransactionType,
@@ -245,19 +246,58 @@ export async function updateStudentWalletLimits(
 }
 
 export async function topUpStudentWallet(params: {
-  walletId: string;
+  walletId?: string;
   schoolId: string;
   studentId: string;
   studentName: string;
   amount: number;
-  paymentMethod: 'momo_mtn' | 'telecel_cash' | 'airteltigo' | 'card_visa_mc' | 'bank_transfer' | 'cash';
-  reference: string;
+  paymentMethod: 'momo_mtn' | 'telecel_cash' | 'airteltigo' | 'card_visa_mc' | 'bank_transfer' | 'cash' | 'paystack';
+  reference?: string;
   processedBy?: string;
-}): Promise<{ newBalance: number; transactionId: string }> {
+}): Promise<{ newBalance: number; transactionId: string; reference?: string }> {
   if (params.amount <= 0) {
     throw new Error('Top-up amount must be strictly greater than zero');
   }
 
+  // 1. Attempt authoritative server transaction first
+  try {
+    const res = await fetch('/api/wallet/topup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        schoolId: params.schoolId,
+        studentId: params.studentId,
+        studentName: params.studentName,
+        amount: params.amount,
+        paymentMethod: params.paymentMethod,
+        reference: params.reference,
+        processedBy: params.processedBy || 'Parent/Admin Self-Service'
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      await sendNotification({
+        recipientId: params.studentId,
+        recipientRole: 'student',
+        schoolId: params.schoolId,
+        title: `Wallet Top-Up Successful (+GHS ${params.amount.toFixed(2)})`,
+        message: `Your student wallet has been credited with GHS ${params.amount.toFixed(2)}. New balance: GHS ${Number(data.newBalance).toFixed(2)}.`,
+        type: 'Payment',
+        createdBy: 'Wallet Gateway'
+      });
+      return { newBalance: data.newBalance, transactionId: data.transactionId, reference: data.reference };
+    }
+    if (!res.ok && data.message) {
+      throw new Error(data.message);
+    }
+  } catch (err: any) {
+    if (err?.message && (err.message.includes('DUPLICATE_REFERENCE') || err.message.includes('CROSS_TENANT') || err.message.includes('INVALID_AMOUNT'))) {
+      throw err;
+    }
+    console.warn('[WALLET] Server topup fallback to Firestore client transaction:', err);
+  }
+
+  // 2. Client Firestore transaction fallback
   const wallet = await fetchStudentWallet(params.schoolId, params.studentId);
   const walletDocRef = doc(db, 'studentWallets', wallet.id);
   const txnDocRef = doc(collection(db, 'walletTransactions'));
@@ -314,6 +354,128 @@ export async function topUpStudentWallet(params: {
     handleFirestoreError(err, OperationType.WRITE, `studentWallets/${wallet.id}`);
     throw err;
   }
+}
+
+/**
+ * Purchase an active daily school service using the student digital wallet.
+ * Enforces atomic balance verification and creates an immutable transaction record.
+ */
+export async function purchaseDailyServiceWithWallet(params: {
+  schoolId: string;
+  studentId: string;
+  serviceId: string;
+  processedBy?: string;
+}): Promise<{ success: boolean; newBalance: number; serviceName: string; amount: number; reference: string; message: string }> {
+  try {
+    const res = await fetch('/api/wallet/purchase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        schoolId: params.schoolId,
+        studentId: params.studentId,
+        serviceId: params.serviceId,
+        processedBy: params.processedBy || 'Student Portal Quick Purchase'
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      await sendNotification({
+        recipientId: params.studentId,
+        recipientRole: 'student',
+        schoolId: params.schoolId,
+        title: `Service Purchased: ${data.serviceName}`,
+        message: `Your wallet was charged GHS ${Number(data.amount).toFixed(2)} for ${data.serviceName}. Remaining balance: GHS ${Number(data.newBalance).toFixed(2)}. Ref: ${data.reference}`,
+        type: 'Payment',
+        createdBy: 'Campus Services'
+      });
+      return {
+        success: true,
+        newBalance: data.newBalance,
+        serviceName: data.serviceName,
+        amount: data.amount,
+        reference: data.reference,
+        message: data.message || 'Service purchased successfully!'
+      };
+    }
+    return {
+      success: false,
+      newBalance: 0,
+      serviceName: '',
+      amount: 0,
+      reference: '',
+      message: data.message || 'Failed to purchase service with wallet.'
+    };
+  } catch (err: any) {
+    console.error('[PURCHASE SERVICE ERROR]', err);
+    return {
+      success: false,
+      newBalance: 0,
+      serviceName: '',
+      amount: 0,
+      reference: '',
+      message: err?.message || 'Network error while processing service purchase.'
+    };
+  }
+}
+
+/**
+ * Issue an authorized refund or adjustment on a prior transaction.
+ */
+export async function issueWalletRefund(params: {
+  schoolId: string;
+  transactionId: string;
+  reason: string;
+  authorizedBy: string;
+}): Promise<{ success: boolean; newBalance: number; refundAmount: number; reference: string; message: string }> {
+  try {
+    const res = await fetch('/api/wallet/refund', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      return {
+        success: true,
+        newBalance: data.newBalance,
+        refundAmount: data.refundAmount,
+        reference: data.reference,
+        message: data.message || 'Refund issued successfully.'
+      };
+    }
+    return {
+      success: false,
+      newBalance: 0,
+      refundAmount: 0,
+      reference: '',
+      message: data.message || 'Failed to issue refund.'
+    };
+  } catch (err: any) {
+    console.error('[WALLET REFUND ERROR]', err);
+    return {
+      success: false,
+      newBalance: 0,
+      refundAmount: 0,
+      reference: '',
+      message: err?.message || 'Network error issuing refund.'
+    };
+  }
+}
+
+/**
+ * Fetch authoritative real-time metrics for school wallet ecosystem.
+ */
+export async function fetchWalletStats(schoolId: string) {
+  try {
+    const res = await fetch(`/api/wallet/stats?schoolId=${encodeURIComponent(schoolId)}`);
+    const data = await res.json();
+    if (res.ok && data.success) {
+      return data;
+    }
+  } catch (e) {
+    console.warn('[WALLET STATS WARNING]', e);
+  }
+  return null;
 }
 
 export async function deductStudentWallet(params: {
@@ -1041,5 +1203,22 @@ export function subscribeToTransportAttendanceLogs(schoolId: string, callback: (
     callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as TransportAttendance)));
   }, (err) => {
     console.warn('Realtime transportAttendance warning:', err);
+  });
+}
+
+export function subscribeToDailyServiceUsage(
+  schoolId: string,
+  callback: (usages: DailyServiceUsage[]) => void,
+  studentId?: string
+): Unsubscribe {
+  const colRef = collection(db, 'dailyServiceUsage');
+  let q = query(colRef, where('schoolId', '==', schoolId), orderBy('date', 'desc'));
+  if (studentId) {
+    q = query(colRef, where('schoolId', '==', schoolId), where('studentId', '==', studentId), orderBy('date', 'desc'));
+  }
+  return onSnapshot(q, (snapshot) => {
+    callback(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as DailyServiceUsage)));
+  }, (err) => {
+    console.warn('Realtime dailyServiceUsage warning:', err);
   });
 }
