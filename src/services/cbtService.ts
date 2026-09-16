@@ -21,6 +21,7 @@ import {
   CbtDifficulty
 } from '../types/cbt';
 import { enqueueCbtAttempt } from './offlineSyncService';
+import { resolveApiUrl } from '../config/api';
 
 export class CbtService {
   // Subscribe to Questions
@@ -470,7 +471,7 @@ Return ONLY a JSON array of objects with the following schema:
   }
 ]`;
 
-      const res = await fetch('/api/ai/ask', {
+      const res = await fetch(resolveApiUrl('/api/ai/ask'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

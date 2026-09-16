@@ -1,37 +1,33 @@
 import { initOfflineSyncEngine } from './services/offlineSyncService';
 
+/**
+ * Registers the EDUkenZA PWA Service Worker (/sw.js)
+ * Required for PWA installability and PWABuilder packaging.
+ */
 export function registerServiceWorker() {
   try {
-    // Initialize offline sync engine for background sync
+    // Initialize offline sync engine for queueing background sync
     initOfflineSyncEngine();
 
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      // In development mode, unregister any active service worker to prevent Vite dev server asset interception
-      const isDev = Boolean((import.meta as any)?.env?.DEV ?? true);
-      if (isDev) {
-        navigator.serviceWorker.getRegistrations().then((registrations) => {
-          for (const registration of registrations) {
-            registration.unregister();
-          }
-        }).catch((err) => {
-          console.warn('[Service Worker] Unregister dev notice:', err);
-        });
-        return;
-      }
-
-      window.addEventListener('load', () => {
+      const doRegister = () => {
         navigator.serviceWorker
-          .register('/sw.js')
+          .register('/sw.js', { scope: '/' })
           .then((registration) => {
-            console.log('[Service Worker] EDUkenZA Offline Engine Registered with scope:', registration.scope);
+            console.log('[Service Worker] EDUkenZA PWA Service Worker registered with scope:', registration.scope);
           })
           .catch((error) => {
-            console.warn('[Service Worker] Registration note:', error);
+            console.warn('[Service Worker] Registration notice:', error);
           });
-      });
+      };
+
+      if (document.readyState === 'complete') {
+        doRegister();
+      } else {
+        window.addEventListener('load', doRegister);
+      }
     }
   } catch (err) {
-    console.warn('[Service Worker] Registration init note:', err);
+    console.warn('[Service Worker] Init notice:', err);
   }
 }
-

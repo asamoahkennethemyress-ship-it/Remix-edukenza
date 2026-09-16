@@ -1,21 +1,31 @@
-const CACHE_NAME = 'edukenza-v1-cache';
+// EDUkenZA Progressive Web App Service Worker
+const CACHE_NAME = 'edukenza-pwa-v1';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-192-maskable.png',
+  '/icon-512.png',
+  '/icon-512-maskable.png',
+  '/apple-touch-icon.png',
+  '/favicon.png',
   'https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css'
 ];
 
-// 1. Service Worker Install Event - Pre-cache essential assets
+// 1. Service Worker Install Event - Pre-cache essential frontend assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Pre-caching static assets for offline access');
-      return cache.addAll(STATIC_ASSETS);
+      console.log('[SW] Pre-caching core PWA assets for offline access');
+      return cache.addAll(STATIC_ASSETS).catch((err) => {
+        console.warn('[SW] Pre-cache partial warning:', err);
+      });
     }).then(() => self.skipWaiting())
   );
 });
 
-// 2. Service Worker Activate Event - Clean up stale caches
+// 2. Service Worker Activate Event - Clean up stale caches and take control
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -31,22 +41,37 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 3. Service Worker Fetch Event - Cache-First for static assets, Network-First for API calls
+// 3. Service Worker Fetch Event
 self.addEventListener('fetch', (event) => {
-  const requestUrl = new URL(event.request.url);
+  const request = event.request;
+  const url = new URL(request.url);
 
-  // Skip non-GET requests or browser extension/chrome-extension requests
-  if (event.request.method !== 'GET' || !event.request.url.startsWith('http')) {
+  // Ignore non-GET requests or special schemes
+  if (request.method !== 'GET' || !request.url.startsWith('http')) {
     return;
   }
 
-  // Handle Firebase/API requests: Network-First with catch
-  if (requestUrl.hostname.includes('firestore.googleapis.com') || 
-      requestUrl.hostname.includes('identitytoolkit') ||
-      requestUrl.pathname.startsWith('/api/')) {
+  // Handle SPA navigation requests: Network-First falling back to cached index.html
+  if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() => {
-        return caches.match(event.request);
+      fetch(request).catch(() => {
+        return caches.match('/index.html') || caches.match('/');
+      })
+    );
+    return;
+  }
+
+  // Handle API and dynamic service requests: Network-First with offline catch
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.hostname.includes('vercel.app') ||
+    url.hostname.includes('firestore.googleapis.com') ||
+    url.hostname.includes('identitytoolkit') ||
+    url.hostname.includes('paystack.co')
+  ) {
+    event.respondWith(
+      fetch(request).catch(() => {
+        return caches.match(request);
       })
     );
     return;
@@ -54,29 +79,27 @@ self.addEventListener('fetch', (event) => {
 
   // Handle Static Assets (JS, CSS, Images, Fonts): Stale-While-Revalidate Strategy
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request).then((networkResponse) => {
-        // Only cache valid responses
+    caches.match(request).then((cachedResponse) => {
+      const fetchPromise = fetch(request).then((networkResponse) => {
         if (networkResponse && networkResponse.status === 200) {
           const responseToCache = networkResponse.clone();
           caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
+            cache.put(request, responseToCache);
           });
         }
         return networkResponse;
       }).catch((err) => {
-        console.warn('[SW] Fetch failed, serving offline cache if available:', err);
+        // Fallback silently if offline and resource is not cached
+        return cachedResponse;
       });
 
-      // Return cached response immediately if available, or wait for network
       return cachedResponse || fetchPromise;
     })
   );
 });
 
-// 4. Background Sync Event Listener
+// 4. Background Sync for offline sync triggers
 self.addEventListener('sync', (event) => {
-  console.log('[SW] Background sync triggered for tag:', event.tag);
   if (
     event.tag === 'sync-edukenza-offline' || 
     event.tag === 'sync-cbt-answers' || 
@@ -95,4 +118,3 @@ self.addEventListener('sync', (event) => {
     );
   }
 });
-

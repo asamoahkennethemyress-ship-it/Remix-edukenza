@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase/config';
+import { resolveApiUrl } from '../config/api';
 import { 
   LmsCourse, 
   LmsLesson, 
@@ -1070,7 +1071,7 @@ export class LmsService {
     prompt: string, 
     mode: 'tutor' | 'math' | 'summary' | 'teacher_quiz' | 'lesson_plan'
   ): Promise<string> {
-    const res = await fetch('/api/ai/ask', {
+    const res = await fetch(resolveApiUrl('/api/ai/ask'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

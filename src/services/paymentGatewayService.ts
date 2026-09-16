@@ -4,6 +4,8 @@
  * Zero client authority: All verifications, amounts, and ledger settlements are server-authoritative.
  */
 
+import { resolveApiUrl } from '../config/api';
+
 export interface PaystackConfigResponse {
   success: boolean;
   provider: 'Paystack';
@@ -114,7 +116,7 @@ export async function loadPaystackInlineScript(): Promise<boolean> {
  */
 export async function fetchPaystackConfig(): Promise<PaystackConfigResponse> {
   try {
-    const res = await fetch('/api/payments/paystack/config');
+    const res = await fetch(resolveApiUrl('/api/payments/paystack/config'));
     if (!res.ok) {
       throw new Error(`Server returned HTTP ${res.status}`);
     }
@@ -141,7 +143,7 @@ export async function fetchPaystackConfig(): Promise<PaystackConfigResponse> {
 export async function initializePaystackPayment(
   req: PaystackInitializeRequest
 ): Promise<PaystackInitializeResponse> {
-  const res = await fetch('/api/payments/paystack/initialize', {
+  const res = await fetch(resolveApiUrl('/api/payments/paystack/initialize'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -164,7 +166,7 @@ export async function initializePaystackPayment(
 export async function verifyPaystackPayment(
   reference: string
 ): Promise<PaystackVerifyResponse> {
-  const res = await fetch('/api/payments/paystack/verify', {
+  const res = await fetch(resolveApiUrl('/api/payments/paystack/verify'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
