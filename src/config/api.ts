@@ -1,14 +1,15 @@
 /**
  * EDUkenZA API & Backend Routing Configuration
- * Ensures Express, Gemini AI, and Paystack endpoints cleanly route to the Vercel production backend URL:
- * https://remixedukenza-h22c8g4v8-edu-ken-za.vercel.app
- * across PWA standalone, mobile native WebViews (Capacitor/PWABuilder), and web clients.
+ * Provides intelligent routing for Gemini AI, Paystack, and core school endpoints:
+ * - Web / PWA / Cloud Run: Routes directly to the authoritative full-stack server endpoints (/api/*).
+ * - Native Mobile Containers (Capacitor/Cordova): Routes to the production backend URL when native protocols (capacitor://, file://) are detected.
  */
 
 export const VERCEL_PRODUCTION_BACKEND_URL = 'https://remixedukenza-h22c8g4v8-edu-ken-za.vercel.app';
 
 /**
  * Detect if the app is currently running inside a Capacitor native app or native WebView container
+ * (where there is no local Express backend on the same origin).
  */
 export const isCapacitorNative = (): boolean => {
   if (typeof window === 'undefined') return false;
@@ -22,7 +23,7 @@ export const isCapacitorNative = (): boolean => {
 };
 
 /**
- * Check if the app is currently running in standalone PWA mode
+ * Check if running in PWA standalone display mode
  */
 export const isPwaStandalone = (): boolean => {
   if (typeof window === 'undefined') return false;
@@ -33,24 +34,9 @@ export const isPwaStandalone = (): boolean => {
 };
 
 /**
- * Determines whether a given path or URL targets Gemini AI or Paystack services
- */
-export const isGeminiOrPaystackEndpoint = (rawPath: string): boolean => {
-  if (!rawPath) return false;
-  const cleanPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
-  const pathWithoutQuery = cleanPath.split('?')[0].split('#')[0].toLowerCase();
-
-  return (
-    pathWithoutQuery.startsWith('/api/ai') ||
-    pathWithoutQuery.startsWith('/api/gemini') ||
-    pathWithoutQuery.startsWith('/api/payments/paystack') ||
-    pathWithoutQuery.startsWith('/api/payments') ||
-    pathWithoutQuery.startsWith('/api/paystack')
-  );
-};
-
-/**
- * Resolves an API path to the proper authoritative production Vercel URL
+ * Resolves an API path to the proper authoritative URL:
+ * - On native mobile containers: uses the remote production backend.
+ * - On web, PWA, and Cloud Run: uses standard relative /api/* to communicate with the local full-stack server.
  */
 export function resolveApiUrl(path: string): string {
   if (!path) return path;
@@ -59,30 +45,30 @@ export function resolveApiUrl(path: string): string {
   }
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
-  // Always route Gemini and Paystack API calls to the live production server
-  if (isGeminiOrPaystackEndpoint(cleanPath)) {
+  // Only route to external host if running inside a native mobile container without local server
+  if (isCapacitorNative()) {
     return `${VERCEL_PRODUCTION_BACKEND_URL}${cleanPath}`;
   }
 
-  // Also route all other relative /api calls if running on native mobile or standalone PWA
-  if (isCapacitorNative() || isPwaStandalone()) {
-    return `${VERCEL_PRODUCTION_BACKEND_URL}${cleanPath}`;
-  }
-
+  // Web, PWA standalone, and Cloud Run containers communicate with their own server
   return cleanPath;
 }
 
 /**
- * Global transparent fetch interceptor.
- * Ensures that all API fetch calls targeting Gemini and Paystack anywhere in the application
- * (as well as mobile/PWA API calls) cleanly route to the Vercel production backend URL:
- * https://remixedukenza-h22c8g4v8-edu-ken-za.vercel.app
+ * Initializes transparent fetch proxy for mobile native containers.
+ * In web and PWA modes, requests naturally route to the full-stack server.
  */
 let proxyInitialized = false;
 
 export function initializeMobileApiProxy(): void {
   if (typeof window === 'undefined' || proxyInitialized) return;
   proxyInitialized = true;
+
+  // In web browsers and standard PWA preview, the full-stack server is on the same origin
+  if (!isCapacitorNative()) {
+    console.log('[API Routing] Standard full-stack web/PWA mode active -> using local server /api endpoints');
+    return;
+  }
 
   try {
     const originalFetch = window.fetch?.bind(window);
@@ -99,49 +85,35 @@ export function initializeMobileApiProxy(): void {
           rawUrl = (input as Request).url;
         }
 
-        // Parse relative path or pathname
-        let shouldReroute = false;
-        let finalUrl = rawUrl;
-
-        // If it starts with relative /api or api/
         if (rawUrl.startsWith('/api') || rawUrl.startsWith('api/')) {
           const formattedPath = rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`;
-          if (isGeminiOrPaystackEndpoint(formattedPath) || isCapacitorNative() || isPwaStandalone()) {
-            shouldReroute = true;
-            finalUrl = `${VERCEL_PRODUCTION_BACKEND_URL}${formattedPath}`;
-          }
-        } else if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
-          try {
-            const parsed = new URL(rawUrl);
-            // If calling local dev origin or custom origin for Gemini/Paystack
-            if (isGeminiOrPaystackEndpoint(parsed.pathname)) {
-              if (!parsed.hostname.includes('vercel.app')) {
-                shouldReroute = true;
-                finalUrl = `${VERCEL_PRODUCTION_BACKEND_URL}${parsed.pathname}${parsed.search}`;
-              }
-            }
-          } catch {
-            // Ignore URL parse error
-          }
-        }
+          const targetUrl = `${VERCEL_PRODUCTION_BACKEND_URL}${formattedPath}`;
 
-        if (shouldReroute) {
+          let response: Response;
           if (typeof input === 'string') {
-            input = finalUrl;
+            response = await originalFetch(targetUrl, init);
           } else if (input instanceof URL) {
-            input = new URL(finalUrl);
+            response = await originalFetch(new URL(targetUrl), init);
           } else {
-            input = new Request(finalUrl, input);
+            response = await originalFetch(new Request(targetUrl, input), init);
           }
+
+          // If remote Vercel server returns 401 Protected Deployment, fall back gracefully
+          if (response.status === 401) {
+            console.warn('[API Proxy] Remote backend returned 401 (Deployment Protection). Falling back to relative endpoint.');
+            return await originalFetch(input, init);
+          }
+
+          return response;
         }
 
         return await originalFetch(input, init);
-      } catch {
+      } catch (err) {
+        // Fall back to original fetch on network or proxy exception
         return originalFetch(input, init);
       }
     };
 
-    // Safely attempt overriding window.fetch without throwing
     try {
       Object.defineProperty(window, 'fetch', {
         value: patchedFetch,
@@ -156,11 +128,10 @@ export function initializeMobileApiProxy(): void {
       }
     }
 
-    console.log('[API Proxy] EDUkenZA Production Backend Proxy active ->', VERCEL_PRODUCTION_BACKEND_URL);
+    console.log('[API Routing] Capacitor native proxy active -> routing to', VERCEL_PRODUCTION_BACKEND_URL);
   } catch (proxyErr) {
     console.warn('[API Proxy] Setup notice:', proxyErr);
   }
 }
 
-// Named alias for clarity
 export const initializePwaApiRouting = initializeMobileApiProxy;

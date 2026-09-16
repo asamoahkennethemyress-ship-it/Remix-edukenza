@@ -482,6 +482,8 @@ export const AIChat: React.FC<AIChatProps> = ({
       });
 
       if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        const serverError = errJson?.error || `AI Gateway responded with HTTP status ${res.status}`;
         // Fallback to real database calculated summary if AI service is unavailable
         if (dataResult.isSchoolDataQuery && dataResult.summaryAnswer) {
           setMessages(prev => prev.map(m => 
@@ -490,7 +492,7 @@ export const AIChat: React.FC<AIChatProps> = ({
           setIsThinking(false);
           return;
         }
-        throw new Error(`AI Gateway responded with HTTP status ${res.status}`);
+        throw new Error(serverError);
       }
 
       if (!res.body) {
@@ -551,12 +553,13 @@ export const AIChat: React.FC<AIChatProps> = ({
       }
     } catch (err: any) {
       console.error('[EDUkenZA AIChat Diagnostic Log]:', err);
+      const userSafeMsg = err?.message || 'Server error encountered during AI inference. Please retry.';
       setMessages(prev => prev.map(m => 
         m.id === assistantPlaceholderId 
           ? { 
               ...m, 
               isError: true, 
-              content: 'EDUkenZA AI is temporarily unavailable. Please try again.' 
+              content: userSafeMsg 
             } 
           : m
       ));
@@ -764,8 +767,8 @@ export const AIChat: React.FC<AIChatProps> = ({
                         <AlertTriangle className="w-4 h-4 text-amber-600" />
                         <span>EDUkenZA AI Service Notice</span>
                       </div>
-                      <p className="text-xs text-slate-700 font-medium">
-                        EDUkenZA AI is temporarily unavailable. Please try again.
+                      <p className="text-xs text-slate-700 font-medium whitespace-pre-wrap">
+                        {msg.content || 'Unable to complete AI response. Please retry.'}
                       </p>
                       <button
                         onClick={() => handleRetry(idx)}

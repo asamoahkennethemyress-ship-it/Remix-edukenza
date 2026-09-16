@@ -448,7 +448,8 @@ Format your output cleanly using Markdown, LaTeX (if mathematical), bullet point
       });
 
       if (!res.ok) {
-        throw new Error(`Gemini Service Error (${res.status})`);
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error || `Gemini Service Error (${res.status})`);
       }
 
       const reader = res.body?.getReader();
@@ -546,7 +547,8 @@ Format your output cleanly using Markdown, LaTeX (if mathematical), bullet point
         return;
       }
 
-      notify('EDUkenZA AI is temporarily unavailable. Please try again.', 'error');
+      const userSafeMsg = err?.message || 'Server error encountered during AI inference. Please retry.';
+      notify(userSafeMsg, 'error');
       
       setSessions(prev => prev.map(s => {
         if (s.id === activeSession.id) {
@@ -555,7 +557,7 @@ Format your output cleanly using Markdown, LaTeX (if mathematical), bullet point
               return { 
                 ...m, 
                 isError: true,
-                content: 'EDUkenZA AI is temporarily unavailable. Please try again.' 
+                content: userSafeMsg 
               };
             }
             return m;
@@ -890,8 +892,8 @@ Format your output cleanly using Markdown, LaTeX (if mathematical), bullet point
                           <AlertTriangle className="w-4 h-4 text-amber-600" />
                           <span>EDUkenZA AI Service Notice</span>
                         </div>
-                        <p className="text-xs text-slate-700 font-medium">
-                          EDUkenZA AI is temporarily unavailable. Please try again.
+                        <p className="text-xs text-slate-700 font-medium whitespace-pre-wrap">
+                          {msg.content || 'Unable to complete AI query. Please retry.'}
                         </p>
                         <button
                           onClick={() => {

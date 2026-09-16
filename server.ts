@@ -359,9 +359,10 @@ function normalizeGeminiContents(history: any[], currentPrompt: string, images?:
   return contents;
 }
 
-function parseGenAIError(error: any): { isApiKeyError: boolean; status: number; message: string } {
+function parseGenAIError(error: any): { isApiKeyError: boolean; status: number; category: string; message: string } {
   const rawMsg = typeof error === 'string' ? error : (error?.message || JSON.stringify(error || {}));
   
+  // 1. Quota / Rate limit (429 / RESOURCE_EXHAUSTED)
   if (
     rawMsg.includes("RESOURCE_EXHAUSTED") ||
     rawMsg.includes("429") ||
@@ -372,29 +373,114 @@ function parseGenAIError(error: any): { isApiKeyError: boolean; status: number; 
     return {
       isApiKeyError: false,
       status: 429,
-      message: "Gemini API rate limit or model quota exceeded. Please retry in a few moments, or try a different task."
+      category: "Rate limit/quota exceeded",
+      message: "Rate limit or model quota exceeded. Please wait a moment before sending another message."
     };
   }
 
+  // 2. Invalid API Key / Missing API Key (401 / 400)
   if (
     rawMsg.includes("API_KEY_INVALID") ||
     rawMsg.includes("API key not valid") ||
     rawMsg.includes("GEMINI_API_KEY") ||
     rawMsg.includes("INVALID_ARGUMENT") ||
-    rawMsg.includes("API_KEY")
+    rawMsg.includes("API_KEY") ||
+    rawMsg.includes("key is missing")
   ) {
     return {
       isApiKeyError: true,
       status: 400,
-      message: "The Gemini API key is missing or invalid. Please configure a valid GEMINI_API_KEY in the AI Studio Settings menu."
+      category: "Invalid API key",
+      message: "The Gemini API key is missing or invalid. Please verify the server-side GEMINI_API_KEY configuration."
     };
   }
 
-  console.error("[EDUkenZA AI Secure Diagnostic Log]:", rawMsg);
+  // 3. Permission Denied / Forbidden (403 / PERMISSION_DENIED)
+  if (
+    rawMsg.includes("PERMISSION_DENIED") ||
+    rawMsg.includes("403") ||
+    rawMsg.includes("Access denied") ||
+    rawMsg.includes("not permitted")
+  ) {
+    return {
+      isApiKeyError: false,
+      status: 403,
+      category: "API permission denied",
+      message: "API permission denied. The configured credentials do not have permission to access the requested Gemini AI service."
+    };
+  }
+
+  // 4. Model Unavailable / High Demand / Service Unavailable (503 / 404 / UNAVAILABLE)
+  if (
+    rawMsg.includes("503") ||
+    rawMsg.includes("UNAVAILABLE") ||
+    rawMsg.includes("high demand") ||
+    rawMsg.includes("overloaded") ||
+    rawMsg.includes("not found") ||
+    rawMsg.includes("NOT_FOUND") ||
+    rawMsg.includes("model was not found")
+  ) {
+    return {
+      isApiKeyError: false,
+      status: 503,
+      category: "AI model unavailable",
+      message: "The AI model is currently experiencing high demand or is temporarily unavailable. Please retry in a moment."
+    };
+  }
+
+  // 5. Request Timeout (408 / 504 / TIMEOUT / DEADLINE_EXCEEDED)
+  if (
+    rawMsg.includes("TIMEOUT") ||
+    rawMsg.includes("timed out") ||
+    rawMsg.includes("DEADLINE_EXCEEDED") ||
+    rawMsg.includes("ETIMEDOUT") ||
+    rawMsg.includes("ESOCKETTIMEDOUT")
+  ) {
+    return {
+      isApiKeyError: false,
+      status: 504,
+      category: "Request timeout",
+      message: "AI request timed out while generating a response. Please try with a more focused question or shorter prompt."
+    };
+  }
+
+  // 6. Network Error / Connection Error (502)
+  if (
+    rawMsg.includes("fetch failed") ||
+    rawMsg.includes("ECONNREFUSED") ||
+    rawMsg.includes("ECONNRESET") ||
+    rawMsg.includes("ENOTFOUND") ||
+    rawMsg.includes("network error")
+  ) {
+    return {
+      isApiKeyError: false,
+      status: 502,
+      category: "Network error",
+      message: "Network connection error while communicating with Gemini API services. Please verify internet connectivity."
+    };
+  }
+
+  // 7. AI Configuration Error (400)
+  if (
+    rawMsg.includes("configuration") ||
+    rawMsg.includes("config") ||
+    rawMsg.includes("unsupported")
+  ) {
+    return {
+      isApiKeyError: false,
+      status: 400,
+      category: "AI configuration error",
+      message: "AI configuration error encountered. Please check the AI model and prompt parameters."
+    };
+  }
+
+  // 8. General Server Error (500)
+  console.error("[EDUkenZA AI Diagnostic Log]:", rawMsg);
   return {
     isApiKeyError: false,
     status: 500,
-    message: "EDUkenZA AI is temporarily unavailable. Please try again."
+    category: "Server error",
+    message: "Server error encountered during AI inference. Please retry your request."
   };
 }
 

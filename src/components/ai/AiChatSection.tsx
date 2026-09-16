@@ -1296,8 +1296,8 @@ export const AiChatSection: React.FC<AiChatSectionProps> = ({
                           <AlertTriangle className="w-4 h-4 text-amber-600" />
                           <span>EDUkenZA AI Service Notice</span>
                         </div>
-                        <p className="text-xs text-slate-700 font-medium">
-                          EDUkenZA AI is temporarily unavailable. Please try again.
+                        <p className="text-xs text-slate-700 font-medium whitespace-pre-wrap">
+                          {msg.content || 'Unable to complete AI response. Please retry.'}
                         </p>
                         <button
                           onClick={() => handleRetryMessage(msgIndex)}
