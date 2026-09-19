@@ -12,11 +12,13 @@ import {
   Loader2, 
   AlertTriangle 
 } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 
 export const PricingSection: React.FC = () => {
   const { setActiveModal } = useAuth();
   const { marketingContent } = useMarketing();
   const { pricing } = marketingContent;
+  const shouldReduceMotion = useReducedMotion();
 
   const [activePlans, setActivePlans] = useState<PricingPlanDoc[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -127,11 +129,11 @@ export const PricingSection: React.FC = () => {
   }, []);
 
   return (
-    <section id="pricing" className="py-16 bg-slate-100 text-slate-900 relative">
+    <section id="pricing" className="py-16 bg-slate-100 text-slate-900 relative overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-3 mb-12">
+        <div className="scroll-reveal text-center max-w-3xl mx-auto space-y-3 mb-12">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded bg-[#002147]/5 border border-[#002147]/15 text-[#002147] text-xs font-bold uppercase tracking-widest">
             <span className="w-2 h-2 rounded-full bg-[#D4AF37]"></span>
             Transparent SaaS Pricing
@@ -190,93 +192,98 @@ export const PricingSection: React.FC = () => {
                   ? 'md:grid-cols-3 max-w-5xl mx-auto' 
                   : 'md:grid-cols-2 lg:grid-cols-4'
           } gap-6`}>
-            {activePlans.map((plan) => (
-              <div
-                key={plan.docId || plan.planName}
-                className={`relative rounded-2xl p-6 flex flex-col justify-between transition-all duration-200 ${
-                  plan.popular
-                    ? 'bg-[#002147] text-white border-2 border-[#D4AF37] shadow-xl scale-[1.02]'
-                    : 'bg-white text-slate-900 border border-slate-200 shadow-sm hover:shadow-md'
-                }`}
-              >
-                {/* Popular Ribbon */}
-                {plan.popular && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-[#D4AF37] text-[#002147] px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" />
-                    <span>Most Popular Choice</span>
-                  </div>
-                )}
-
-                <div className="space-y-5">
-                  
-                  {/* Plan Name & Description */}
-                  <div>
-                    <h3 className={`text-xl font-black uppercase tracking-tight ${plan.popular ? 'text-white' : 'text-[#002147]'}`}>
-                      {plan.planName}
-                    </h3>
-                    <p className={`text-xs mt-1.5 leading-relaxed min-h-[36px] ${plan.popular ? 'text-slate-300' : 'text-slate-600'}`}>
-                      {plan.description}
-                    </p>
-                  </div>
-
-                  {/* Price Display */}
-                  <div className={`py-3.5 border-y ${plan.popular ? 'border-slate-800' : 'border-slate-100'}`}>
-                    <div className="flex items-baseline gap-1">
-                      <span className={`text-3xl font-black ${plan.popular ? 'text-[#D4AF37]' : 'text-[#002147]'}`}>
-                        {plan.currency}{plan.price}
-                      </span>
-                      <span className={`text-xs font-semibold ${plan.popular ? 'text-slate-300' : 'text-slate-500'}`}>
-                        {plan.billingPeriod}
-                      </span>
+            {activePlans.map((plan, idx) => {
+              const stagger = idx % 3 === 0 ? '' : idx % 3 === 1 ? 'delay-100' : 'delay-200';
+              return (
+                <div
+                  key={plan.docId || plan.planName}
+                  className={`scroll-reveal ${stagger} card-hover-lift relative rounded-2xl p-6 flex flex-col justify-between ${
+                    plan.popular
+                      ? 'bg-[#002147] text-white border-2 border-[#D4AF37] shadow-xl md:-translate-y-1'
+                      : 'bg-white text-slate-900 border border-slate-200 shadow-sm hover:border-[#002147]/30'
+                  }`}
+                >
+                  {/* Popular Ribbon */}
+                  {plan.popular && (
+                    <div 
+                      className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-[#D4AF37] text-[#002147] px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow flex items-center gap-1 animate-pulse"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>Most Popular Choice</span>
                     </div>
+                  )}
+
+                  <div className="space-y-5">
+                    
+                    {/* Plan Name & Description */}
+                    <div>
+                      <h3 className={`text-xl font-black uppercase tracking-tight ${plan.popular ? 'text-white' : 'text-[#002147]'}`}>
+                        {plan.planName}
+                      </h3>
+                      <p className={`text-xs mt-1.5 leading-relaxed min-h-[36px] ${plan.popular ? 'text-slate-300' : 'text-slate-600'}`}>
+                        {plan.description}
+                      </p>
+                    </div>
+
+                    {/* Price Display */}
+                    <div className={`py-3.5 border-y ${plan.popular ? 'border-slate-800' : 'border-slate-100'}`}>
+                      <div className="flex items-baseline gap-1">
+                        <span className={`text-3xl font-black ${plan.popular ? 'text-[#D4AF37]' : 'text-[#002147]'}`}>
+                          {plan.currency}{plan.price}
+                        </span>
+                        <span className={`text-xs font-semibold ${plan.popular ? 'text-slate-300' : 'text-slate-500'}`}>
+                          {plan.billingPeriod}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Feature Checklist */}
+                    <div className="space-y-2.5">
+                      <p className={`text-[10px] font-black uppercase tracking-widest ${plan.popular ? 'text-[#D4AF37]' : 'text-[#002147]'}`}>
+                        Included Capabilities:
+                      </p>
+                      <ul className="space-y-2">
+                        {plan.features.map((feat, fIdx) => (
+                          <li key={fIdx} className={`flex items-start gap-2 text-xs font-medium ${plan.popular ? 'text-slate-200' : 'text-slate-700'}`}>
+                            <Check className={`w-4 h-4 shrink-0 mt-0.5 ${plan.popular ? 'text-[#D4AF37]' : 'text-emerald-600'}`} />
+                            <span>{feat}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
                   </div>
 
-                  {/* Feature Checklist */}
-                  <div className="space-y-2.5">
-                    <p className={`text-[10px] font-black uppercase tracking-widest ${plan.popular ? 'text-[#D4AF37]' : 'text-[#002147]'}`}>
-                      Included Capabilities:
-                    </p>
-                    <ul className="space-y-2">
-                      {plan.features.map((feat, idx) => (
-                        <li key={idx} className={`flex items-start gap-2 text-xs font-medium ${plan.popular ? 'text-slate-200' : 'text-slate-700'}`}>
-                          <Check className={`w-4 h-4 shrink-0 mt-0.5 ${plan.popular ? 'text-[#D4AF37]' : 'text-emerald-600'}`} />
-                          <span>{feat}</span>
-                        </li>
-                      ))}
-                    </ul>
+                  {/* CTA Button */}
+                  <div className="pt-6">
+                    <button
+                      onClick={() => setActiveModal('contact')}
+                      className={`btn-interactive w-full py-3 rounded-lg font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer ${
+                        plan.popular
+                          ? 'bg-[#D4AF37] hover:bg-[#c29f2e] text-[#002147] shadow-md'
+                          : 'bg-[#002147] hover:bg-[#003366] text-white shadow-sm'
+                      }`}
+                    >
+                      <span>{plan.buttonText || 'Select Plan'}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
                   </div>
 
                 </div>
-
-                {/* CTA Button */}
-                <div className="pt-6">
-                  <button
-                    onClick={() => setActiveModal('contact')}
-                    className={`w-full py-3 rounded-lg font-black text-xs uppercase tracking-wider transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
-                      plan.popular
-                        ? 'bg-[#D4AF37] hover:bg-[#c29f2e] text-[#002147] shadow-md'
-                        : 'bg-[#002147] hover:bg-[#003366] text-white shadow-sm'
-                    }`}
-                  >
-                    <span>{plan.buttonText || 'Select Plan'}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
         {/* Security & Guarantee Footer */}
-        <div className="mt-12 bg-white border border-slate-200 p-5 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-700 shadow-sm">
+        <div className="scroll-reveal delay-200 card-hover-lift mt-12 bg-white border border-slate-200 p-5 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-700 shadow-sm">
           <div className="flex items-center gap-3">
             <Shield className="w-5 h-5 text-[#002147] shrink-0" />
             <span>Need custom features or a specific payment schedule? We offer custom government & NGO education grants.</span>
           </div>
           <button
             onClick={() => setActiveModal('contact')}
-            className="text-[#002147] hover:text-[#003366] font-bold uppercase underline whitespace-nowrap cursor-pointer"
+            className="btn-interactive text-[#002147] hover:text-[#003366] font-bold uppercase underline whitespace-nowrap cursor-pointer transition-colors"
           >
             Speak with an EdTech Advisor &rarr;
           </button>

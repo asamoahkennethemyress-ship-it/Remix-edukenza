@@ -29,6 +29,7 @@ import { OfflineSyncBanner } from './components/OfflineSyncBanner';
 import { RoleWalkthroughModal } from './components/common/RoleWalkthroughModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { UserRole } from './types';
+import { useScrollReveal } from './utils/scrollReveal';
 
 // Code-split heavy dashboards for optimal load speed and isolation
 const OwnerDashboard = lazy(() => import('./components/OwnerDashboard').then(m => ({ default: m.OwnerDashboard })));
@@ -125,6 +126,7 @@ const ToastNotification: React.FC = () => {
 
 const MainContent: React.FC = () => {
   const { activeView } = useAuth();
+  useScrollReveal(activeView);
 
   if (activeView === 'owner-dashboard') {
     return (

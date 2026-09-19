@@ -24,8 +24,8 @@ export const Footer: React.FC = () => {
   };
 
   return (
-    <footer className="bg-[#002147] text-slate-300 border-t-4 border-[#D4AF37] pt-12 pb-[calc(2rem+env(safe-area-inset-bottom,0px))]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+    <footer className="bg-[#002147] text-slate-300 border-t-4 border-[#D4AF37] pt-12 pb-[calc(2rem+env(safe-area-inset-bottom,0px))] overflow-hidden">
+      <div className="scroll-reveal max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
         
         {/* Main Footer Links */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
@@ -34,7 +34,7 @@ export const Footer: React.FC = () => {
           <div className="lg:col-span-2 space-y-3">
             <div 
               onClick={() => handleNav('home')}
-              className="inline-flex items-center gap-2 cursor-pointer group"
+              className="inline-flex items-center gap-2 cursor-pointer group transition-transform hover:scale-101"
             >
               <BrandLogo variant="full-dark" size="lg" showTagline={true} />
             </div>
@@ -102,7 +102,7 @@ export const Footer: React.FC = () => {
             <ul className="space-y-1.5 text-xs font-semibold">
               {footer.quickLinks.map((ql) => (
                 <li key={ql.id}>
-                  <button onClick={() => handleNav(ql.url as ActiveView)} className="hover:text-[#D4AF37] transition cursor-pointer">
+                  <button onClick={() => handleNav(ql.url as ActiveView)} className="hover:text-[#D4AF37] transition-colors cursor-pointer">
                     {ql.name}
                   </button>
                 </li>
@@ -115,22 +115,22 @@ export const Footer: React.FC = () => {
             <p className="text-xs font-black text-[#D4AF37] uppercase tracking-wider">Company & Legal</p>
             <ul className="space-y-1.5 text-xs font-semibold">
               <li>
-                <button onClick={() => setActiveModal('contact')} className="hover:text-[#D4AF37] transition cursor-pointer">
+                <button onClick={() => setActiveModal('contact')} className="hover:text-[#D4AF37] transition-colors cursor-pointer">
                   About Us
                 </button>
               </li>
               <li>
-                <button onClick={() => setActiveModal('contact')} className="hover:text-[#D4AF37] transition cursor-pointer">
+                <button onClick={() => setActiveModal('contact')} className="hover:text-[#D4AF37] transition-colors cursor-pointer">
                   Contact Support
                 </button>
               </li>
               <li>
-                <button onClick={() => setActiveModal('privacy')} className="hover:text-[#D4AF37] transition cursor-pointer">
+                <button onClick={() => setActiveModal('privacy')} className="hover:text-[#D4AF37] transition-colors cursor-pointer">
                   Privacy Policy
                 </button>
               </li>
               <li>
-                <button onClick={() => setActiveModal('terms')} className="hover:text-[#D4AF37] transition cursor-pointer">
+                <button onClick={() => setActiveModal('terms')} className="hover:text-[#D4AF37] transition-colors cursor-pointer">
                   Terms of Service
                 </button>
               </li>

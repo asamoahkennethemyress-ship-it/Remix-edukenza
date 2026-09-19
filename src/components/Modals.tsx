@@ -18,6 +18,7 @@ import {
   Check,
   AlertCircle
 } from 'lucide-react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 
 export const Modals: React.FC = () => {
   const { 
@@ -28,6 +29,7 @@ export const Modals: React.FC = () => {
     setupSchoolAdminPasswordWithCredentials,
     showToast 
   } = useAuth();
+  const shouldReduceMotion = useReducedMotion();
 
   const [contactForm, setContactForm] = useState({ name: '', email: '', school: '', message: '' });
   const [loading, setLoading] = useState(false);
@@ -151,7 +153,12 @@ export const Modals: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white border-2 border-[#002147] rounded-xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl relative space-y-6 my-8 max-h-[90vh] overflow-y-auto text-slate-900">
+      <motion.div 
+        initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: 14 }}
+        animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.28, ease: 'easeOut' }}
+        className="bg-white border-2 border-[#002147] rounded-xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl relative space-y-6 my-8 max-h-[90vh] overflow-y-auto text-slate-900"
+      >
         
         {/* Close Button */}
         <button
@@ -316,7 +323,7 @@ export const Modals: React.FC = () => {
           </div>
         )}
 
-      </div>
+      </motion.div>
     </div>
   );
 };

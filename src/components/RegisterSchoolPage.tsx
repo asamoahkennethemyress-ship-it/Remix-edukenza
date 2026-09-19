@@ -66,10 +66,10 @@ export const RegisterSchoolPage: React.FC = () => {
   return (
     <div className="min-h-[85vh] bg-slate-100 text-slate-900 flex items-center justify-center py-10 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
       
-      <div className="max-w-3xl w-full space-y-6 relative z-10">
+      <div className="animate-fade-in-up max-w-3xl w-full space-y-6 relative z-10">
         
         {/* Header */}
-        <div className="text-center space-y-2">
+        <div className="animate-fade-in-down text-center space-y-2">
           <div 
             onClick={() => setActiveView('home')}
             className="inline-flex items-center gap-2.5 cursor-pointer"
@@ -350,7 +350,7 @@ export const RegisterSchoolPage: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3.5 rounded-lg bg-[#002147] hover:bg-[#003366] text-white font-black text-xs uppercase tracking-wider shadow-md transition flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
+            className="btn-interactive w-full py-3.5 rounded-lg bg-[#002147] hover:bg-[#003366] text-white font-black text-xs uppercase tracking-wider shadow-md transition flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path

@@ -32,11 +32,11 @@ export const BenefitsSection: React.FC = () => {
   const items = benefits?.items || [];
 
   return (
-    <section id="benefits" className="py-16 bg-slate-50 text-slate-900 relative">
+    <section id="benefits" className="py-16 bg-slate-50 text-slate-900 relative overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-3 mb-12">
+        <div className="scroll-reveal text-center max-w-3xl mx-auto space-y-3 mb-12">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded bg-[#002147]/5 border border-[#002147]/15 text-[#002147] text-xs font-bold uppercase tracking-widest">
             <span className="w-2 h-2 rounded-full bg-[#D4AF37]"></span>
             {benefits?.badgeText || 'Institutional Growth & Efficiency'}
@@ -51,38 +51,41 @@ export const BenefitsSection: React.FC = () => {
 
         {/* Benefits Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {items.map((benefit, idx) => (
-            <div
-              key={benefit.id || benefit.title || idx}
-              className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm hover:shadow-md hover:border-[#002147]/30 transition-all flex flex-col justify-between group"
-            >
-              <div className="space-y-4">
-                
-                {/* Top Icon & Metric Pill */}
-                <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-lg bg-[#002147] text-[#D4AF37] flex items-center justify-center font-bold shadow-sm">
-                    {benefit.iconName && ICON_MAP[benefit.iconName] 
-                      ? ICON_MAP[benefit.iconName] 
-                      : <CheckCircle className="w-5 h-5 text-amber-400" />}
+          {items.map((benefit, idx) => {
+            const staggerDelay = idx % 3 === 0 ? '' : idx % 3 === 1 ? 'delay-100' : 'delay-200';
+            return (
+              <div
+                key={benefit.id || benefit.title || idx}
+                className={`scroll-reveal ${staggerDelay} card-hover-lift bg-white border border-slate-200 rounded-xl p-6 shadow-sm hover:border-[#002147]/30 flex flex-col justify-between group cursor-default`}
+              >
+                <div className="space-y-4">
+                  
+                  {/* Top Icon & Metric Pill */}
+                  <div className="flex items-center justify-between">
+                    <div className="w-10 h-10 rounded-lg bg-[#002147] text-[#D4AF37] flex items-center justify-center font-bold shadow-sm transition-transform duration-200 group-hover:scale-105">
+                      {benefit.iconName && ICON_MAP[benefit.iconName] 
+                        ? ICON_MAP[benefit.iconName] 
+                        : <CheckCircle className="w-5 h-5 text-amber-400" />}
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xl font-black text-[#002147]">{benefit.metric}</span>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{benefit.metricLabel}</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-xl font-black text-[#002147]">{benefit.metric}</span>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{benefit.metricLabel}</p>
-                  </div>
-                </div>
 
-                {/* Title & Description */}
-                <div>
-                  <h3 className="text-lg font-bold text-[#002147] group-hover:text-amber-600 transition">
-                    {benefit.title}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-slate-600 leading-relaxed mt-2">
-                    {benefit.description}
-                  </p>
+                  {/* Title & Description */}
+                  <div>
+                    <h3 className="text-lg font-bold text-[#002147] group-hover:text-amber-600 transition-colors">
+                      {benefit.title}
+                    </h3>
+                    <p className="text-xs sm:text-sm text-slate-600 leading-relaxed mt-2">
+                      {benefit.description}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>

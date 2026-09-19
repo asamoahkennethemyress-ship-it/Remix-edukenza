@@ -16,12 +16,12 @@ export const AboutSection: React.FC = () => {
   ];
 
   return (
-    <section id="about" className="py-16 bg-white text-slate-900 relative border-b border-slate-200">
+    <section id="about" className="py-16 bg-white text-slate-900 relative border-b border-slate-200 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
           
-          {/* Left Column: Content */}
-          <div className="lg:col-span-6 space-y-6">
+          {/* Left Column: Content with smooth viewport animation */}
+          <div className="scroll-reveal lg:col-span-6 space-y-6">
             <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded bg-[#002147]/5 border border-[#002147]/15 text-[#002147] text-xs font-bold uppercase tracking-widest">
               <span className="w-2 h-2 rounded-full bg-[#D4AF37]"></span>
               {about?.badgeText || 'About EDUkenZA'}
@@ -56,16 +56,16 @@ export const AboutSection: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Column: Imagery */}
-          <div className="lg:col-span-6">
-            <div className="relative rounded-2xl overflow-hidden shadow-2xl border-4 border-[#002147]/10 group">
+          {/* Right Column: Imagery with subtle hover interaction */}
+          <div className="scroll-reveal delay-100 lg:col-span-6">
+            <div className="card-hover-lift relative rounded-2xl overflow-hidden shadow-xl hover:shadow-2xl border-4 border-[#002147]/10 group">
               <img
                 src={about?.imageUrl || 'https://images.unsplash.com/photo-1577896851231-70ef18881754?w=1200&auto=format&fit=crop&q=80'}
                 alt={about?.title || 'About EDUkenZA'}
-                className="w-full h-80 sm:h-96 object-cover group-hover:scale-105 transition-transform duration-500"
+                className="w-full h-80 sm:h-96 object-cover group-hover:scale-103 transition-transform duration-500"
                 referrerPolicy="no-referrer"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#002147]/80 via-transparent to-transparent flex items-end p-6">
+              <div className="absolute inset-0 bg-gradient-to-t from-[#002147]/85 via-transparent to-transparent flex items-end p-6">
                 <div className="text-white space-y-1">
                   <div className="text-xs font-bold uppercase tracking-widest text-[#D4AF37]">
                     Enterprise-Grade Platform
