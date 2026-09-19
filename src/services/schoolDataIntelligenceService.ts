@@ -26,7 +26,7 @@ export interface AuthoritativeUser {
 }
 
 export interface QueryContext {
-  lastTopic?: 'students' | 'teachers' | 'parents' | 'classes' | 'subjects' | 'attendance' | 'fees' | 'exams' | 'timetables';
+  lastTopic?: 'students' | 'teachers' | 'parents' | 'classes' | 'subjects' | 'attendance' | 'fees' | 'exams' | 'timetables' | 'assignments' | 'wallet';
   lastClassName?: string;
   lastClassId?: string;
   lastGender?: 'male' | 'female';
@@ -188,11 +188,16 @@ export class SchoolDataIntelligenceService {
       'how many enrolled', 'student count', 'teacher count', 'enrollment', 'roster',
       'how many are girls', 'how many are boys', 'how many female', 'how many male',
       'in form', 'in grade', 'in class', 'pass rate', 'attendance rate',
-      'total tuition', 'fees collected', 'outstanding balance', 'unpaid fees',
+      'total tuition', 'fees collected', 'outstanding balance', 'unpaid fees', 'school fees', 'invoice',
       'who is absent', 'attendance today', 'how many active', 'how many disabled',
       'do i have', 'in my school', 'registered student', 'registered teacher',
       'what percentage of', 'ratio of', 'which of them teach', 'list the teachers',
-      'list the students', 'examination result', 'average score'
+      'list the students', 'examination result', 'average score', 'exam schedule',
+      'upcoming exams', 'my exams', 'examination', 'exam results', 'test results',
+      'what assignments', 'pending assignments', 'homework due', 'assignments due',
+      'assignment count', 'list assignments', 'my timetable', 'class timetable',
+      'schedule for today', 'today timetable', 'teacher timetable', 'school timetable',
+      'wallet balance', 'student wallet', 'canteen wallet', 'service balance'
     ];
 
     return schoolDataKeywords.some(kw => text.includes(kw));
@@ -268,10 +273,25 @@ export class SchoolDataIntelligenceService {
     }
 
     // Test 12 & 13: School Isolation & Prompt Injection Defense
-    // Check if the user is trying to ask for another school's data
-    const foreignSchoolKeywords = ['school b', 'school_b', 'school 2', 'other school', 'st. mary', 'st mary', 'another school'];
+    // Check if the user is trying to ask for another school's data or override schoolId
+    const foreignSchoolKeywords = [
+      'school b', 'school_b', 'school 2', 'other school', 'another school', 'st. mary', 'st mary', 
+      'different school', 'external school', 'different academy', 'outside my school',
+      'switch school', 'switch to school', 'foreign school', 'all schools', 'across schools',
+      'database of school', 'schoolid:', 'school_id:', 'school id'
+    ];
     const hasForeignSchoolRef = foreignSchoolKeywords.some(kw => cleanPrompt.includes(kw));
-    const hasInjectionAttempt = cleanPrompt.includes('ignore all') || cleanPrompt.includes('disregard previous') || cleanPrompt.includes('bypass');
+    const hasInjectionAttempt = cleanPrompt.includes('ignore all') || 
+                                cleanPrompt.includes('disregard previous') || 
+                                cleanPrompt.includes('disregard instructions') ||
+                                cleanPrompt.includes('bypass') ||
+                                cleanPrompt.includes('system override') ||
+                                cleanPrompt.includes('you are now') ||
+                                cleanPrompt.includes('maintenance mode') ||
+                                cleanPrompt.includes('switch role') ||
+                                cleanPrompt.includes('pretend you are') ||
+                                cleanPrompt.includes('as platform owner') ||
+                                cleanPrompt.includes('as school admin');
 
     if ((hasForeignSchoolRef || hasInjectionAttempt) && user.role !== 'platform_owner') {
       return {
@@ -297,7 +317,7 @@ export class SchoolDataIntelligenceService {
     // 4. Extract Entity, Filters, and Context
     const updatedContext: QueryContext = { ...context };
 
-    // Resolve Topic: students, teachers, parents, classes, attendance, fees
+    // Resolve Topic: students, teachers, parents, classes, attendance, fees, exams, assignments, timetables, wallet
     let topic = context.lastTopic || 'students';
     if (cleanPrompt.includes('student') || cleanPrompt.includes('enrolled') || cleanPrompt.includes('learner') || cleanPrompt.includes('pupil')) {
       topic = 'students';
@@ -309,8 +329,16 @@ export class SchoolDataIntelligenceService {
       topic = 'classes';
     } else if (cleanPrompt.includes('attendance') || cleanPrompt.includes('absent') || cleanPrompt.includes('present')) {
       topic = 'attendance';
-    } else if (cleanPrompt.includes('fee') || cleanPrompt.includes('tuition') || cleanPrompt.includes('payment') || cleanPrompt.includes('balance')) {
+    } else if (cleanPrompt.includes('fee') || cleanPrompt.includes('tuition') || cleanPrompt.includes('payment') || cleanPrompt.includes('balance') || cleanPrompt.includes('invoice')) {
       topic = 'fees';
+    } else if (cleanPrompt.includes('exam') || cleanPrompt.includes('test') || cleanPrompt.includes('score') || cleanPrompt.includes('grade') || cleanPrompt.includes('result') || cleanPrompt.includes('assessment')) {
+      topic = 'exams';
+    } else if (cleanPrompt.includes('assignment') || cleanPrompt.includes('homework') || cleanPrompt.includes('submission') || cleanPrompt.includes('project task')) {
+      topic = 'assignments';
+    } else if (cleanPrompt.includes('timetable') || cleanPrompt.includes('schedule') || cleanPrompt.includes('period') || cleanPrompt.includes('bell schedule') || cleanPrompt.includes('routine')) {
+      topic = 'timetables';
+    } else if (cleanPrompt.includes('wallet') || cleanPrompt.includes('canteen') || cleanPrompt.includes('tuckshop') || cleanPrompt.includes('meal') || cleanPrompt.includes('daily service')) {
+      topic = 'wallet';
     }
     updatedContext.lastTopic = topic;
 
@@ -415,6 +443,39 @@ export class SchoolDataIntelligenceService {
           user,
           updatedContext
         });
+      } else if (topic === 'exams') {
+        return await this.executeExamQuery({
+          schoolId,
+          classFilter,
+          subjectFilter,
+          cleanPrompt,
+          user,
+          updatedContext
+        });
+      } else if (topic === 'assignments') {
+        return await this.executeAssignmentQuery({
+          schoolId,
+          classFilter,
+          subjectFilter,
+          cleanPrompt,
+          user,
+          updatedContext
+        });
+      } else if (topic === 'timetables') {
+        return await this.executeTimetableQuery({
+          schoolId,
+          classFilter,
+          cleanPrompt,
+          user,
+          updatedContext
+        });
+      } else if (topic === 'wallet') {
+        return await this.executeWalletQuery({
+          schoolId,
+          cleanPrompt,
+          user,
+          updatedContext
+        });
       }
 
       // Default fallback if unhandled
@@ -454,6 +515,12 @@ export class SchoolDataIntelligenceService {
       if (topic === 'fees' && (cleanPrompt.includes('total') || cleanPrompt.includes('collected') || cleanPrompt.includes('school'))) {
         return "ACCESS DENIED: You don't have permission to access school financial ledgers.";
       }
+      if (topic === 'wallet' && (cleanPrompt.includes('all') || cleanPrompt.includes('total') || cleanPrompt.includes('school') || cleanPrompt.includes('other'))) {
+        return "ACCESS DENIED: Students may only view their personal student wallet balance.";
+      }
+      if (topic === 'exams' && (cleanPrompt.includes('all') || cleanPrompt.includes('school') || cleanPrompt.includes('other') || cleanPrompt.includes('class average') || cleanPrompt.includes('grade sheet'))) {
+        return "ACCESS DENIED: As a student, you only have permission to view your personal academic and examination results.";
+      }
       if (topic === 'teachers' || topic === 'parents' || (topic === 'students' && (cleanPrompt.includes('how many') || cleanPrompt.includes('list')))) {
         return "ACCESS DENIED: As a student, you only have permission to view your personal academic records and profile.";
       }
@@ -462,9 +529,9 @@ export class SchoolDataIntelligenceService {
 
     // Test 15: Teacher Scope
     if (user.role === 'teacher') {
-      // Teacher asking about financial ledgers or other teachers' salaries
-      if (topic === 'fees' || cleanPrompt.includes('salary') || cleanPrompt.includes('compensation') || cleanPrompt.includes('revenue')) {
-        return "ACCESS DENIED: Educators do not have permission to access institutional financial records or salary details.";
+      // Teacher asking about financial ledgers, wallets, or other teachers' salaries
+      if (topic === 'fees' || topic === 'wallet' || cleanPrompt.includes('salary') || cleanPrompt.includes('compensation') || cleanPrompt.includes('revenue')) {
+        return "ACCESS DENIED: Educators do not have permission to access institutional financial records, student wallets, or salary details.";
       }
       // Teacher asking about a class they do not teach
       if (classFilter && user.assignedClassNames && user.assignedClassNames.length > 0) {
@@ -484,6 +551,12 @@ export class SchoolDataIntelligenceService {
       // Parent asking about other students or school wide finances
       if (topic === 'fees' && (cleanPrompt.includes('total') || cleanPrompt.includes('all') || cleanPrompt.includes('school'))) {
         return "ACCESS DENIED: Parents only have permission to view billing invoices for their linked children.";
+      }
+      if (topic === 'wallet' && (cleanPrompt.includes('total') || cleanPrompt.includes('all') || cleanPrompt.includes('school'))) {
+        return "ACCESS DENIED: Parents only have permission to view daily service balances for their linked children.";
+      }
+      if (topic === 'exams' && (cleanPrompt.includes('all') || cleanPrompt.includes('school') || cleanPrompt.includes('other students'))) {
+        return "ACCESS DENIED: Parents only have permission to view assessment and examination results for their linked children.";
       }
       if (topic === 'students' && (cleanPrompt.includes('how many') || cleanPrompt.includes('all') || cleanPrompt.includes('roster'))) {
         return "ACCESS DENIED: Parents only have permission to access records for their linked children.";
@@ -876,6 +949,270 @@ export class SchoolDataIntelligenceService {
       extractedData: { totalBilled, totalPaid, totalOutstanding, invoiceCount: invoices.length, currency },
       summaryAnswer: answer,
       systemContextPrompt: `AUTHORITATIVE DATABASE FACT: Billed = ${currency} ${totalBilled}, Paid = ${currency} ${totalPaid}, Outstanding = ${currency} ${totalOutstanding}. Report these exact numbers.`,
+      updatedContext
+    };
+  }
+
+  /**
+   * Real Firestore Query Execution: Examination Results & CBT Exams
+   */
+  private static async executeExamQuery(params: {
+    schoolId: string;
+    classFilter?: string;
+    subjectFilter?: string;
+    cleanPrompt: string;
+    user: AuthoritativeUser;
+    updatedContext: QueryContext;
+  }): Promise<DataIntelligenceResult> {
+    const { schoolId, classFilter, subjectFilter, user, updatedContext } = params;
+
+    // Check examResults collection
+    const qResults = query(collection(db, 'examResults'), where('schoolId', '==', schoolId));
+    const snapResults = await getDocs(qResults);
+    let results: any[] = [];
+    snapResults.forEach(d => results.push({ id: d.id, ...d.data() }));
+
+    // Also check cbtExams for scheduled tests
+    const qCbt = query(collection(db, 'cbtExams'), where('schoolId', '==', schoolId));
+    const snapCbt = await getDocs(qCbt);
+    const cbtExams: any[] = [];
+    snapCbt.forEach(d => cbtExams.push({ id: d.id, ...d.data() }));
+
+    // Role-based privacy filtering
+    if (user.role === 'student') {
+      const studentId = user.uid;
+      results = results.filter(r => r.studentId === studentId || r.userId === studentId);
+    } else if (user.role === 'parent') {
+      const linked = user.linkedStudentIds || [];
+      results = results.filter(r => linked.includes(r.studentId) || linked.includes(r.userId));
+    }
+
+    if (classFilter) {
+      results = results.filter(r => (r.className || r.class || '').toLowerCase().includes(classFilter.toLowerCase()));
+    }
+    if (subjectFilter) {
+      results = results.filter(r => (r.subject || r.subjectName || '').toLowerCase().includes(subjectFilter.toLowerCase()));
+    }
+
+    if (results.length === 0 && cbtExams.length === 0) {
+      return {
+        isSchoolDataQuery: true,
+        isAuthorized: true,
+        toolUsed: 'getExamSummary',
+        summaryAnswer: 'There are currently no examination or assessment records found in your school database matching this query.',
+        systemContextPrompt: `AUTHORITATIVE DATABASE FACT: 0 examination records found.`,
+        updatedContext
+      };
+    }
+
+    if (results.length > 0) {
+      const scores = results.map(r => Number(r.score || r.marks || r.percentage || 0)).filter(s => !isNaN(s));
+      const avgScore = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : 'N/A';
+      const maxScore = scores.length > 0 ? Math.max(...scores) : 'N/A';
+      const minScore = scores.length > 0 ? Math.min(...scores) : 'N/A';
+
+      const answer = `Found ${results.length} examination record(s)${classFilter ? ` for ${classFilter}` : ''}${subjectFilter ? ` in ${subjectFilter}` : ''}. The average score is ${avgScore}% (highest: ${maxScore}%, lowest: ${minScore}%)${cbtExams.length > 0 ? `, with ${cbtExams.length} active CBT exam(s) configured` : ''}.`;
+
+      return {
+        isSchoolDataQuery: true,
+        isAuthorized: true,
+        toolUsed: 'getExamSummary',
+        extractedData: { totalRecords: results.length, avgScore, maxScore, minScore, cbtExamCount: cbtExams.length },
+        summaryAnswer: answer,
+        systemContextPrompt: `AUTHORITATIVE DATABASE FACT: Exam records count = ${results.length}, Average score = ${avgScore}%, High = ${maxScore}%, Low = ${minScore}%, Active CBT exams = ${cbtExams.length}. Report these exact figures.`,
+        updatedContext
+      };
+    } else {
+      const examTitles = cbtExams.map(e => e.title || e.name || 'CBT Assessment').slice(0, 5);
+      const answer = `There are ${cbtExams.length} active CBT examination(s) configured for your school: ${examTitles.join(', ')}.`;
+      return {
+        isSchoolDataQuery: true,
+        isAuthorized: true,
+        toolUsed: 'getExamSummary',
+        extractedData: { cbtExamCount: cbtExams.length, examTitles },
+        summaryAnswer: answer,
+        systemContextPrompt: `AUTHORITATIVE DATABASE FACT: ${cbtExams.length} CBT exams configured: ${examTitles.join(', ')}. Report this exact schedule.`,
+        updatedContext
+      };
+    }
+  }
+
+  /**
+   * Real Firestore Query Execution: Coursework & Assignments
+   */
+  private static async executeAssignmentQuery(params: {
+    schoolId: string;
+    classFilter?: string;
+    subjectFilter?: string;
+    cleanPrompt: string;
+    user: AuthoritativeUser;
+    updatedContext: QueryContext;
+  }): Promise<DataIntelligenceResult> {
+    const { schoolId, classFilter, subjectFilter, updatedContext } = params;
+
+    const q = query(collection(db, 'assignments'), where('schoolId', '==', schoolId));
+    const snap = await getDocs(q);
+    const assignments: any[] = [];
+    snap.forEach(d => assignments.push({ id: d.id, ...d.data() }));
+
+    let filtered = assignments;
+    if (classFilter) {
+      filtered = filtered.filter(a => (a.className || a.class || '').toLowerCase().includes(classFilter.toLowerCase()));
+    }
+    if (subjectFilter) {
+      filtered = filtered.filter(a => (a.subject || a.subjectName || '').toLowerCase().includes(subjectFilter.toLowerCase()));
+    }
+
+    if (filtered.length === 0) {
+      const answer = classFilter
+        ? `There are currently no assignments posted for ${classFilter}.`
+        : 'There are currently no coursework or assignment records recorded for your school.';
+      return {
+        isSchoolDataQuery: true,
+        isAuthorized: true,
+        toolUsed: 'getAssignmentSummary',
+        summaryAnswer: answer,
+        systemContextPrompt: `AUTHORITATIVE DATABASE FACT: 0 assignments found.`,
+        updatedContext
+      };
+    }
+
+    const activeAssignments = filtered.filter(a => !a.isClosed && a.status !== 'archived');
+    const titles = filtered.map(a => a.title || a.name || 'Assignment').slice(0, 5);
+    const answer = `There are ${filtered.length} assignment(s) recorded${classFilter ? ` for ${classFilter}` : ''} (${activeAssignments.length} currently active). Recent assignments include: ${titles.join(', ')}.`;
+
+    return {
+      isSchoolDataQuery: true,
+      isAuthorized: true,
+      toolUsed: 'getAssignmentSummary',
+      extractedData: { totalCount: filtered.length, activeCount: activeAssignments.length, titles },
+      summaryAnswer: answer,
+      systemContextPrompt: `AUTHORITATIVE DATABASE FACT: Total assignments = ${filtered.length} (${activeAssignments.length} active). Recent titles: ${titles.join(', ')}. Report this exact data.`,
+      updatedContext
+    };
+  }
+
+  /**
+   * Real Firestore Query Execution: Master Class & Teacher Timetables
+   */
+  private static async executeTimetableQuery(params: {
+    schoolId: string;
+    classFilter?: string;
+    cleanPrompt: string;
+    user: AuthoritativeUser;
+    updatedContext: QueryContext;
+  }): Promise<DataIntelligenceResult> {
+    const { schoolId, classFilter, user, updatedContext } = params;
+
+    const q = query(collection(db, 'timetables'), where('schoolId', '==', schoolId));
+    const snap = await getDocs(q);
+    const timetables: any[] = [];
+    snap.forEach(d => timetables.push({ id: d.id, ...d.data() }));
+
+    let filtered = timetables;
+    if (classFilter) {
+      filtered = filtered.filter(t => (t.className || t.name || '').toLowerCase().includes(classFilter.toLowerCase()));
+    } else if (user.role === 'teacher' && user.assignedClassNames && user.assignedClassNames.length > 0) {
+      filtered = filtered.filter(t => user.assignedClassNames!.some(c => (t.className || '').toLowerCase().includes(c.toLowerCase())));
+    }
+
+    if (filtered.length === 0) {
+      const answer = classFilter
+        ? `No timetable schedule has been published for ${classFilter} yet.`
+        : 'There are currently no published timetable schedules in your school database.';
+      return {
+        isSchoolDataQuery: true,
+        isAuthorized: true,
+        toolUsed: 'getTimetableSummary',
+        summaryAnswer: answer,
+        systemContextPrompt: `AUTHORITATIVE DATABASE FACT: 0 timetable records found.`,
+        updatedContext
+      };
+    }
+
+    const timetableNames = filtered.map(t => t.className || t.name || 'Master Timetable').slice(0, 5);
+    const totalSlots = filtered.reduce((acc, t) => acc + (Array.isArray(t.slots || t.periods || t.schedule) ? (t.slots || t.periods || t.schedule).length : 1), 0);
+
+    const answer = `Found ${filtered.length} timetable schedule(s) with ${totalSlots} instructional period(s) configured for: ${timetableNames.join(', ')}.`;
+
+    return {
+      isSchoolDataQuery: true,
+      isAuthorized: true,
+      toolUsed: 'getTimetableSummary',
+      extractedData: { count: filtered.length, totalSlots, timetableNames },
+      summaryAnswer: answer,
+      systemContextPrompt: `AUTHORITATIVE DATABASE FACT: Timetables count = ${filtered.length}, configured for: ${timetableNames.join(', ')}. Report this exact schedule summary.`,
+      updatedContext
+    };
+  }
+
+  /**
+   * Real Firestore Query Execution: Daily Services & Student Wallets
+   */
+  private static async executeWalletQuery(params: {
+    schoolId: string;
+    cleanPrompt: string;
+    user: AuthoritativeUser;
+    updatedContext: QueryContext;
+  }): Promise<DataIntelligenceResult> {
+    const { schoolId, user, updatedContext } = params;
+
+    let q = query(collection(db, 'studentWallets'), where('schoolId', '==', schoolId));
+    if (user.role === 'student') {
+      q = query(collection(db, 'studentWallets'), where('schoolId', '==', schoolId), where('studentId', '==', user.uid));
+    }
+
+    const snap = await getDocs(q);
+    const wallets: any[] = [];
+    snap.forEach(d => wallets.push({ id: d.id, ...d.data() }));
+
+    if (wallets.length === 0) {
+      const answer = user.role === 'student'
+        ? 'Your student wallet balance has not been activated or funded yet.'
+        : 'There are currently no active student wallet accounts registered in your school daily services database.';
+      return {
+        isSchoolDataQuery: true,
+        isAuthorized: true,
+        toolUsed: 'getWalletSummary',
+        summaryAnswer: answer,
+        systemContextPrompt: `AUTHORITATIVE DATABASE FACT: 0 student wallet records found.`,
+        updatedContext
+      };
+    }
+
+    if (user.role === 'student') {
+      const myWallet = wallets[0];
+      const bal = Number(myWallet.balance || 0);
+      const curr = myWallet.currency || 'R';
+      const answer = `Your current student wallet balance is ${curr} ${bal.toFixed(2)} (Status: ${myWallet.status || 'Active'}).`;
+      return {
+        isSchoolDataQuery: true,
+        isAuthorized: true,
+        toolUsed: 'getWalletSummary',
+        extractedData: { balance: bal, currency: curr, status: myWallet.status || 'Active' },
+        summaryAnswer: answer,
+        systemContextPrompt: `AUTHORITATIVE DATABASE FACT: Student wallet balance = ${curr} ${bal.toFixed(2)}, Status = ${myWallet.status || 'Active'}. Report this exact balance.`,
+        updatedContext
+      };
+    }
+
+    let totalFunds = 0;
+    let activeWallets = 0;
+    wallets.forEach(w => {
+      totalFunds += Number(w.balance || 0);
+      if (w.status !== 'blocked' && w.status !== 'suspended') activeWallets++;
+    });
+
+    const currency = wallets[0]?.currency || 'R';
+    const answer = `There are ${wallets.length} student wallet account(s) (${activeWallets} active) with a cumulative balance of ${currency} ${totalFunds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across daily canteen and school services.`;
+
+    return {
+      isSchoolDataQuery: true,
+      isAuthorized: true,
+      toolUsed: 'getWalletSummary',
+      extractedData: { totalWallets: wallets.length, activeWallets, totalFunds, currency },
+      summaryAnswer: answer,
+      systemContextPrompt: `AUTHORITATIVE DATABASE FACT: Total student wallets = ${wallets.length}, Cumulative funds = ${currency} ${totalFunds.toFixed(2)}. Report this exact ledger total.`,
       updatedContext
     };
   }
